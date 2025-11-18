@@ -36,7 +36,7 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
         bgcolor: (theme) => theme.palette.background.paper,
         color: (theme) => theme.palette.text.primary,
         borderBottom: (theme) => `1px solid ${theme.palette.divider}`,
-        zIndex: (theme) => theme.zIndex.drawer + 1,
+        zIndex: (theme) => theme.zIndex.appBar,
       }}
       elevation={0}
     >
