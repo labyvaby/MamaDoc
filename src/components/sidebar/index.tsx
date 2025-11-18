@@ -35,8 +35,6 @@ import { useThemedLayoutContext } from "@refinedev/mui";
 import { Link as RouterLink, useLocation } from "react-router";
 import { useMobileSidebar } from "./mobile-context";
 
-
-
 // Sidebar root that ThemedLayout will render via Sider={() => <Sidebar />}
 export const Sidebar: React.FC = () => {
   return (
@@ -183,8 +181,6 @@ const SidebarHeader: React.FC = () => {
     </Box>
   );
 };
-
-
 
 // Extra static sections: mimic the provided design with many items
 const SidebarSecondary: React.FC = () => {
