@@ -19,6 +19,7 @@ import { MobileSidebarProvider } from "./components/sidebar/mobile-context";
 import { ColorModeContextProvider } from "./contexts/color-mode";
 import { UnderConstruction } from "./pages/placeholder";
 import HomePage from "./pages/home";
+import AppointmentDetailsPage from "./pages/home/appointment";
 function App() {
   return (
     <BrowserRouter>
@@ -72,6 +73,7 @@ function App() {
                   >
                     <Route index element={<Navigate to="/home" replace />} />
                     <Route path="home" element={<HomePage />} />
+                    <Route path="home/appointments/:id" element={<AppointmentDetailsPage />} />
                     <Route path="*" element={<UnderConstruction />} />
                   </Route>
                 </Routes>

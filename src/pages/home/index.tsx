@@ -18,6 +18,7 @@ import {
 import FilterListOutlined from "@mui/icons-material/FilterListOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import Grid from "@mui/material/Grid";
+import { Link as RouterLink } from "react-router";
 import { SubHeader } from "../../components";
 
 // Helper to format today like 15.11.2025
@@ -144,7 +145,7 @@ export const HomePage: React.FC = () => {
               ) : (
                 <Stack divider={<Divider flexItem />}>
                   {filtered.map((a) => (
-                    <Box key={a.ID} sx={{ px: 2, py: 1.25 }}>
+                    <Box key={a.ID} component={RouterLink} to={`/home/appointments/${a.ID}`} sx={{ px: 2, py: 1.25, textDecoration: "none", color: "inherit", '&:hover': { bgcolor: (theme) => theme.palette.action.hover } }}>
                       <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
                         <Stack>
                           <Typography variant="subtitle2">{a["Дата и время"]}</Typography>
