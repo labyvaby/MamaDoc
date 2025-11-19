@@ -10,16 +10,27 @@ import {
 
 import CssBaseline from "@mui/material/CssBaseline";
 import GlobalStyles from "@mui/material/GlobalStyles";
-import routerProvider, { DocumentTitleHandler, UnsavedChangesNotifier } from "@refinedev/react-router";
-import dataProvider from "@refinedev/simple-rest";
+
+import routerProvider, {
+  DocumentTitleHandler,
+  UnsavedChangesNotifier,
+} from "@refinedev/react-router";
+
 import { BrowserRouter, Outlet, Route, Routes, Navigate } from "react-router";
+
 import { Header } from "./components/header";
 import { Sidebar } from "./components/sidebar";
 import { MobileSidebarProvider } from "./components/sidebar/mobile-context";
 import { ColorModeContextProvider } from "./contexts/color-mode";
+
 import { UnderConstruction } from "./pages/placeholder";
 import HomePage from "./pages/home";
 import AppointmentDetailsPage from "./pages/home/appointment";
+
+// 🔥 SUPABASE
+import { dataProvider } from "@refinedev/supabase";
+import { supabase } from "./utility/supabaseClient";
+
 function App() {
   return (
     <BrowserRouter>
@@ -27,22 +38,18 @@ function App() {
         <ColorModeContextProvider>
           <CssBaseline />
           <GlobalStyles styles={{ html: { WebkitFontSmoothing: "auto" } }} />
+
           <RefineSnackbarProvider>
             <DevtoolsProvider>
               <Refine
-                dataProvider={dataProvider("https://api.fake-rest.refine.dev")}
+                dataProvider={dataProvider(supabase)}
                 notificationProvider={useNotificationProvider}
                 routerProvider={routerProvider}
                 resources={[
                   {
-                    name: "blog_posts",
-                    list: "/blog-posts",
-                    create: "/blog-posts/create",
-                    edit: "/blog-posts/edit/:id",
-                    show: "/blog-posts/show/:id",
-                    meta: {
-                      canDelete: true,
-                    },
+                    name: '"Appointments"',
+                    list: "/home",
+                    show: "/home/appointments/:id",
                   },
                   {
                     name: "categories",
@@ -50,9 +57,7 @@ function App() {
                     create: "/categories/create",
                     edit: "/categories/edit/:id",
                     show: "/categories/show/:id",
-                    meta: {
-                      canDelete: true,
-                    },
+                    meta: { canDelete: true },
                   },
                 ]}
                 options={{
@@ -65,7 +70,10 @@ function App() {
                   <Route
                     element={
                       <MobileSidebarProvider>
-                        <ThemedLayout Header={() => <Header sticky />} Sider={() => <Sidebar />}>
+                        <ThemedLayout
+                          Header={() => <Header sticky />}
+                          Sider={() => <Sidebar />}
+                        >
                           <Outlet />
                         </ThemedLayout>
                       </MobileSidebarProvider>
@@ -73,15 +81,20 @@ function App() {
                   >
                     <Route index element={<Navigate to="/home" replace />} />
                     <Route path="home" element={<HomePage />} />
-                    <Route path="home/appointments/:id" element={<AppointmentDetailsPage />} />
+                    <Route
+                      path="home/appointments/:id"
+                      element={<AppointmentDetailsPage />}
+                    />
                     <Route path="*" element={<UnderConstruction />} />
                   </Route>
                 </Routes>
 
+                {/* utility */}
                 <RefineKbar />
                 <UnsavedChangesNotifier />
                 <DocumentTitleHandler />
               </Refine>
+
               <DevtoolsPanel />
             </DevtoolsProvider>
           </RefineSnackbarProvider>

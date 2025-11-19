@@ -1,9 +1,11 @@
 import DarkModeOutlined from "@mui/icons-material/DarkModeOutlined";
 import LightModeOutlined from "@mui/icons-material/LightModeOutlined";
 import MenuOutlined from "@mui/icons-material/MenuOutlined";
+import FavoriteBorderOutlined from "@mui/icons-material/FavoriteBorderOutlined";
 
 import AppBar from "@mui/material/AppBar";
 import Avatar from "@mui/material/Avatar";
+import Box from "@mui/material/Box";
 import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
 import Toolbar from "@mui/material/Toolbar";
@@ -40,7 +42,31 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
       }}
       elevation={0}
     >
-      <Toolbar>
+      <Toolbar sx={{ position: "relative" }}>
+        <Box
+          sx={{
+            position: "absolute",
+            left: "50%",
+            transform: "translateX(-50%)",
+            display: "flex",
+            alignItems: "center",
+            gap: 1.25,
+            pointerEvents: "none",
+          }}
+        >
+          <FavoriteBorderOutlined color="primary" sx={{ fontSize: 24 }} />
+          <Typography
+            variant="h6"
+            sx={{
+              fontWeight: 700,
+              letterSpacing: ".02em",
+              userSelect: "none",
+              display: { xs: "none", sm: "inline-flex" },
+            }}
+          >
+            Мама Доктор
+          </Typography>
+        </Box>
         <Stack direction="row" width="100%" alignItems="center" justifyContent="space-between" gap={1}>
           <Stack direction="row" alignItems="center" gap={1}>
             <IconButton

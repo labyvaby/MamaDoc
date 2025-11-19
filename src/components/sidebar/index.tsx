@@ -262,7 +262,7 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
         sx={{
           borderRadius: 4,
           my: 0.5,
-          px: 1,
+          px: 1.4,
           color: (theme) => (isActive ? theme.palette.primary.main : undefined),
           '& .MuiListItemIcon-root': {
             color: (theme) => (isActive ? theme.palette.primary.main : undefined),

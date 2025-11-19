@@ -1,5 +1,5 @@
 import { ThemeProvider } from "@mui/material/styles";
-import { RefineThemes } from "@refinedev/mui";
+import { getAppTheme } from "../../theme";
 import React, {
   PropsWithChildren,
   createContext,
@@ -48,10 +48,7 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
         mode,
       }}
     >
-      <ThemeProvider
-        // you can change the theme colors here. example: mode === "light" ? RefineThemes.Magenta : RefineThemes.MagentaDark
-        theme={mode === "light" ? RefineThemes.Blue : RefineThemes.BlueDark}
-      >
+      <ThemeProvider theme={getAppTheme(mode)}>
         {children}
       </ThemeProvider>
     </ColorModeContext.Provider>
