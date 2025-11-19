@@ -66,7 +66,6 @@ export const ServicesList: React.FC<ServicesListProps> = ({ loading, errorMsg, i
                   s["cost"] ??
                   0
               );
-              const img = String(s["Картинка"] ?? s["image"] ?? s["img"] ?? "");
               const key = String(s["ID"] ?? s["id"] ?? idx);
 
               return (
@@ -80,37 +79,6 @@ export const ServicesList: React.FC<ServicesListProps> = ({ loading, errorMsg, i
                 >
                   <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1.5}>
                     <Stack direction="row" alignItems="center" gap={1.25} sx={{ minWidth: 0 }}>
-                      <Box
-                        sx={{
-                          width: 44,
-                          height: 44,
-                          borderRadius: 1,
-                          bgcolor: (theme) => theme.palette.action.selected,
-                          overflow: "hidden",
-                          flexShrink: 0,
-                        }}
-                      >
-                        {img ? (
-                          <Box
-                            component="img"
-                            src={img}
-                            alt={name}
-                            sx={{
-                              width: "100%",
-                              height: "100%",
-                              objectFit: "cover",
-                              display: "block",
-                            }}
-                          />
-                        ) : (
-                          <Stack width="100%" height="100%" alignItems="center" justifyContent="center">
-                            <Typography variant="subtitle2">
-                              {(name || "—").slice(0, 1).toUpperCase()}
-                            </Typography>
-                          </Stack>
-                        )}
-                      </Box>
-
                       <Stack sx={{ minWidth: 0 }}>
                         <Typography variant="subtitle2" noWrap>
                           {name || "Без названия"}

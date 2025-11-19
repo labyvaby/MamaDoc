@@ -282,22 +282,38 @@ export const HomePage: React.FC = () => {
                   Доход
                 </Typography>
                 <Typography variant="h4">{formatKGS(revenueSum)}</Typography>
-                <Typography variant="caption" sx={{ opacity: 0.9 }}>
-                  по отфильтрованным
-                </Typography>
-                <ToggleButtonGroup
-                  size="small"
-                  value={revenueMode}
-                  exclusive
-                  onChange={(_, val) => {
-                    if (val) setRevenueMode(val);
-                  }}
-                  sx={{ mt: 1 }}
-                >
-                  <ToggleButton value="total">Итого</ToggleButton>
-                  <ToggleButton value="cash">Наличные</ToggleButton>
-                  <ToggleButton value="cashless">Безналичные</ToggleButton>
-                </ToggleButtonGroup>
+                <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 1 }}>
+                  <Typography variant="caption" sx={{ opacity: 0.9 }}>
+                    по отфильтрованным
+                  </Typography>
+                  <ToggleButtonGroup
+                    size="small"
+                    value={revenueMode}
+                    exclusive
+                    onChange={(_, val) => {
+                      if (val) setRevenueMode(val);
+                    }}
+                    sx={{
+                      "& .MuiToggleButton-root": {
+                        color: "#fff",
+                        borderColor: "rgba(255,255,255,0.5)",
+                      },
+                      "& .MuiToggleButton-root.Mui-selected": {
+                        color: "#fff",
+                        backgroundColor: "rgba(255,255,255,0.16)",
+                        borderColor: "rgba(255,255,255,0.9)",
+                      },
+                      "& .MuiToggleButton-root:hover": {
+                        borderColor: "rgba(255,255,255,0.9)",
+                        backgroundColor: "rgba(255,255,255,0.1)",
+                      },
+                    }}
+                  >
+                    <ToggleButton value="total">Итого</ToggleButton>
+                    <ToggleButton value="cash">Наличные</ToggleButton>
+                    <ToggleButton value="cashless">Безналичные</ToggleButton>
+                  </ToggleButtonGroup>
+                </Stack>
               </Box>
             </CardContent>
           </Card>
