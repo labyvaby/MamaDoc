@@ -287,6 +287,7 @@ export const HomePage: React.FC = () => {
                     по отфильтрованным
                   </Typography>
                   <ToggleButtonGroup
+                    style={{ flexWrap: "nowrap" }}
                     size="small"
                     value={revenueMode}
                     exclusive
