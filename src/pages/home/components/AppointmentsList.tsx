@@ -81,10 +81,10 @@ export const AppointmentsList: React.FC<AppointmentsListProps> = ({
                   <Stack>
                     <Typography variant="subtitle2">{a["Дата и время"]}</Typography>
                     <Typography variant="body2" color="text.secondary">
-                      Пациент: {a["Пациент ID"]}
+                      Пациент: {a["Пациент ФИО"]}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      Доктор: {a["Доктор ID"]}
+                      Доктор: {a["Доктор ФИО"]}
                     </Typography>
                     {a["Дата n8n"] && (
                       <Typography variant="caption" color="text.secondary">

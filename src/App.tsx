@@ -1,5 +1,4 @@
 import { Refine } from "@refinedev/core";
-import { DevtoolsPanel, DevtoolsProvider } from "@refinedev/devtools";
 import { RefineKbar, RefineKbarProvider } from "@refinedev/kbar";
 
 import {
@@ -26,6 +25,7 @@ import { ColorModeContextProvider } from "./contexts/color-mode";
 import { UnderConstruction } from "./pages/placeholder";
 import HomePage from "./pages/home";
 import AppointmentDetailsPage from "./pages/home/appointment";
+import PatientSearchPage from "./pages/patient-search";
 
 // 🔥 SUPABASE
 import { dataProvider } from "@refinedev/supabase";
@@ -40,7 +40,6 @@ function App() {
           <GlobalStyles styles={{ html: { WebkitFontSmoothing: "auto" } }} />
 
           <RefineSnackbarProvider>
-            <DevtoolsProvider>
               <Refine
                 dataProvider={dataProvider(supabase)}
                 notificationProvider={useNotificationProvider}
@@ -85,6 +84,7 @@ function App() {
                       path="home/appointments/:id"
                       element={<AppointmentDetailsPage />}
                     />
+                    <Route path="patient-search" element={<PatientSearchPage />} />
                     <Route path="*" element={<UnderConstruction />} />
                   </Route>
                 </Routes>
@@ -95,8 +95,6 @@ function App() {
                 <DocumentTitleHandler />
               </Refine>
 
-              <DevtoolsPanel />
-            </DevtoolsProvider>
           </RefineSnackbarProvider>
         </ColorModeContextProvider>
       </RefineKbarProvider>

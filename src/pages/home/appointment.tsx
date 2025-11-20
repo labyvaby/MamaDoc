@@ -33,8 +33,8 @@ type Appointment = {
   ID: string;
   "Дата и время": string;
   "Дата n8n": string;
-  "Доктор ID": string;
-  "Пациент ID": string;
+  "Доктор ФИО": string;
+  "Пациент ФИО": string;
   "Услуга ID": string;
   "Заключение ID": string;
   Статус: string;
@@ -56,41 +56,100 @@ export const AppointmentDetailsPage: React.FC = () => {
     (async () => {
       try {
         if (!id) throw new Error("Missing id param");
-        const { data, error } = await supabase
-          .schema("public")
-          .from("Appointments")
-          .select(
-            '"ID","Дата и время","Дата","Доктор ID","Пациент ID","Статус","Ночь","Стоимость","Итого, сом","Скидка","Жалобы при обращении","Комментарий администратора","Услуга ID","Заключение ID"'
-          )
-          .eq("ID", id)
-          .maybeSingle();
+        let record: Record<string, unknown> | null = null;
+        let lastError: unknown = null;
+        for (const tableName of ["FullAppointmentsView", "AppointmentsView", "Appointments"]) {
+          // 1) Пытаемся отфильтровать по колонке "ID"
+          const byId = await supabase
+            .schema("public")
+            .from(tableName)
+            .select("*")
+            .eq("ID", id)
+            .maybeSingle();
 
-        if (error) throw error;
+          if (!byId.error && byId.data) {
+            record = byId.data as Record<string, unknown>;
+            lastError = null;
+            break;
+          }
 
-        if (!data) {
+          // 2) Если колонки "ID" нет (42703) или запись не найдена — грузим все и фильтруем по альтернативным ключам
+          const allRes = await supabase
+            .schema("public")
+            .from(tableName)
+            .select("*");
+
+          if (!allRes.error && allRes.data) {
+            const candidates = (allRes.data as Array<Record<string, unknown>>) ?? [];
+            const keys = ["ID", "Прием ID", "Appointment ID", "Appointment_Id", "Запись ID", "Запись", "id"];
+            const found = candidates.find((r) => {
+              const rr = r as Record<string, unknown>;
+              return keys.some((k) => rr[k] != null && String(rr[k] as unknown) === String(id));
+            });
+            if (found) {
+              record = found;
+              lastError = null;
+              break;
+            }
+          } else {
+            lastError = allRes.error ?? byId.error ?? lastError;
+          }
+        }
+
+        if (!record) {
+          if (lastError) throw lastError;
           setItem(null);
         } else {
+          const d = record as Record<string, unknown>;
+          const get = (k: string) => d[k] as unknown;
+
           const mapped: Appointment = {
-            ID: String(data["ID"]),
-            "Дата и время": data["Дата и время"] ?? "",
-            "Дата n8n": data["Дата"] ?? "",
-            "Доктор ID": data["Доктор ID"] ?? "",
-            "Пациент ID": data["Пациент ID"] ?? "",
-            "Услуга ID": data["Услуга ID"] ?? "",
-            "Заключение ID": data["Заключение ID"] ?? "",
-            Статус: data["Статус"] ?? "",
-            Ночь: data["Ночь"] ?? false,
-            Стоимость: Number(data["Стоимость"] ?? 0),
-            Скидка: data["Скидка"] ?? 0,
-            "Итого, сом": data["Итого, сом"] != null ? Number(data["Итого, сом"]) : undefined,
-            "Жалобы при обращении": data["Жалобы при обращении"] ?? undefined,
-            "Комментарий администратора": data["Комментарий администратора"] ?? undefined,
+            ID: String(
+              (d["ID"] ??
+                d["Прием ID"] ??
+                d["Appointment ID"] ??
+                d["Appointment_Id"] ??
+                d["Запись ID"] ??
+                d["Запись"] ??
+                d["id"] ??
+                "") as string | number
+            ),
+            "Дата и время": (get("Дата и время") as string) ?? "",
+            "Дата n8n": (get("Дата n8n") as string) ?? "",
+            "Доктор ФИО":
+              ((d["Доктор ФИО"] as string) ??
+                (d["Доктор"] as string) ??
+                [d["Доктор Фамилия"], d["Доктор Имя"]].filter(Boolean).join(" ")) || "",
+            "Пациент ФИО":
+              ((d["Пациент ФИО"] as string) ??
+                (d["Пациент"] as string) ??
+                [d["Пациент Фамилия"], d["Пациент Имя"]].filter(Boolean).join(" ")) || "",
+            "Услуга ID": (get("Услуга ID") as string) ?? "",
+            "Заключение ID": (get("Заключение ID") as string) ?? "",
+            Статус: (get("Статус") as string) ?? "",
+            Ночь: (get("Ночь") as boolean | string | null) ?? false,
+            Стоимость: Number((get("Стоимость") as number | string | null) ?? 0),
+            Скидка: (get("Скидка") as number | string | null) ?? 0,
+            "Итого, сом":
+              d["Итого, сом"] != null ? Number(d["Итого, сом"] as number | string) : undefined,
+            "Жалобы при обращении": (get("Жалобы при обращении") as string | undefined) ?? undefined,
+            "Комментарий администратора": (get("Комментарий администратора") as string | undefined) ?? undefined,
           };
           setItem(mapped);
         }
       } catch (e: unknown) {
         console.error(e);
-        setErrorMsg(e instanceof Error ? e.message : String(e));
+        const errObj = (typeof e === "object" && e !== null ? e : {}) as {
+          message?: string;
+          error_description?: string;
+          hint?: string;
+        };
+        const msg =
+          errObj.message ??
+          errObj.error_description ??
+          errObj.hint ??
+          (typeof e === "object" ? JSON.stringify(e) : String(e));
+        setErrorMsg(msg);
       } finally {
         setLoading(false);
       }
@@ -136,7 +195,7 @@ export const AppointmentDetailsPage: React.FC = () => {
                         Пациент:
                       </Typography>
                       <Typography variant="h6" component="span">
-                        {item["Пациент ID"]}
+                        {item["Пациент ФИО"]}
                       </Typography>
                       <Chip
                         size="small"
@@ -186,7 +245,7 @@ export const AppointmentDetailsPage: React.FC = () => {
                             Доктор
                           </Typography>
                         </Stack>
-                        <Typography variant="subtitle2">{item["Доктор ID"] || "—"}</Typography>
+                        <Typography variant="subtitle2">{item["Доктор ФИО"] || "—"}</Typography>
                       </Grid>
 
                       <Grid item xs={12} sm={6}>

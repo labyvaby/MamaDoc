@@ -26,6 +26,12 @@ import { supabase } from "../../utility/supabaseClient";
 import { formatKGS } from "../../utility/format";
 import AppointmentsList from "./components/AppointmentsList";
 import ServicesList from "./components/ServicesList";
+import type { Appointment } from "./types";
+
+// Simple module-level cache to avoid refetching on every navigation
+let CACHED_ALL: Appointment[] | null = null;
+let CACHED_SERVICES: Array<Record<string, unknown>> | null = null;
+let CACHED_INIT_DATE: string | null = null;
 
 // Helper to format today like 15.11.2025
 const formatRuDate = (d: Date) =>
@@ -38,28 +44,56 @@ function parseRuDate(s: string): Date | null {
   return new Date(Number(y), Number(mth) - 1, Number(d));
 }
 
-// Keep local Appointment type for state/filters in this file
-type Appointment = {
-  ID: string;
-  "Дата и время": string;
-  "Дата n8n": string; // dd.MM.yyyy
-  "Доктор ID": string;
-  "Пациент ID": string;
-  Статус: "Оплачено" | "Ожидаем" | "Со скидкой" | string;
-  Ночь: boolean | string;
-  Стоимость: number;
-  "Итого, сом"?: number;
-  "Наличные"?: number;
-  "Безналичные"?: number;
-  "Долг"?: number;
-};
+/**
+ * Parse numbers from mixed formats safely:
+ * - Handles: "1 200", "1,200.50", "1.200,50", "1200 сом", etc.
+ * - Returns 0 if not parsable
+ */
+function parseNumberSafe(v: unknown): number {
+  if (v == null) return 0;
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  const raw = String(v)
+    .replace(/\s+/g, "")
+    .replace(/[^\d.,-]/g, "");
+  const hasDot = raw.includes(".");
+  const hasComma = raw.includes(",");
+  let norm = raw;
+  if (hasDot && hasComma) {
+    const lastDot = raw.lastIndexOf(".");
+    const lastComma = raw.lastIndexOf(",");
+    if (lastComma > lastDot) {
+      norm = raw.replace(/\./g, "").replace(",", ".");
+    } else {
+      norm = raw.replace(/,/g, "");
+    }
+  } else {
+    norm = hasComma ? raw.replace(",", ".") : raw;
+  }
+  const n = parseFloat(norm);
+  return Number.isFinite(n) ? n : 0;
+}
 
 type RuAppointmentRow = {
   "ID": string | number;
   "Дата и время": string | null;
   "Дата n8n": string | null;
-  "Доктор ID": string | null;
-  "Пациент ID": string | null;
+  "Доктор ФИО": string | null;
+  "Пациент ФИО": string | null;
+  // возможные альтернативные поля в представлении/запросе
+  "Доктор": string | null;
+  "Доктор Имя": string | null;
+  "Доктор Фамилия": string | null;
+  "Пациент": string | null;
+  "Пациент Имя": string | null;
+  "Пациент Фамилия": string | null;
+
+  "Прием ID"?: string | number | null;
+  "Appointment ID"?: string | number | null;
+  "Appointment_Id"?: string | number | null;
+  "Запись ID"?: string | number | null;
+  "Запись"?: string | number | null;
+  "id"?: string | number | null;
+
   "Статус": string | null;
   "Ночь": boolean | string | null;
   "Стоимость": number | string | null;
@@ -96,16 +130,21 @@ export const HomePage: React.FC = () => {
   const [servicesError, setServicesError] = React.useState<string | null>(null);
   const [services, setServices] = React.useState<Array<Record<string, unknown>>>([]);
 
-  // Fetch appointments
+// Fetch appointments
   React.useEffect(() => {
     (async () => {
+      if (CACHED_ALL) {
+        setAll(CACHED_ALL);
+        if (CACHED_INIT_DATE) setDate(CACHED_INIT_DATE);
+        setLoading(false);
+        return;
+      }
       try {
         // Query Appointments view using Russian column names
-        const selectClause =
-          '"ID","Дата и время","Дата n8n","Доктор ID","Пациент ID","Статус","Ночь","Стоимость","Итого, сом","Скидка","Наличные","Безналичные","Долг"';
+        const selectClause = "*";
         let rows: RuAppointmentRow[] | null = null;
         let lastError: unknown = null;
-        for (const tableName of ["Appointments"]) {
+        for (const tableName of ["FullAppointmentsView", "AppointmentsView", "Appointments"]) {
           const { data, error } = await supabase
             .schema("public")
             .from(tableName)
@@ -120,21 +159,39 @@ export const HomePage: React.FC = () => {
         if (lastError) throw lastError;
 
         const mapped: Appointment[] = (rows ?? []).map((r: RuAppointmentRow) => ({
-          ID: String(r["ID"]),
+          ID: String(
+            (r["ID"] ??
+              r["Прием ID"] ??
+              r["Appointment ID"] ??
+              r["Appointment_Id"] ??
+              r["Запись ID"] ??
+              r["Запись"] ??
+              r["id"] ??
+              "") as string | number
+          ),
           "Дата и время": r["Дата и время"] ?? "",
           "Дата n8n": r["Дата n8n"] ?? "",
-          "Доктор ID": r["Доктор ID"] ?? "",
-          "Пациент ID": r["Пациент ID"] ?? "",
+          "Доктор ФИО":
+            r["Доктор ФИО"] ??
+            r["Доктор"] ??
+            [r["Доктор Фамилия"], r["Доктор Имя"]].filter(Boolean).join(" ") ??
+            "",
+          "Пациент ФИО":
+            r["Пациент ФИО"] ??
+            r["Пациент"] ??
+            [r["Пациент Фамилия"], r["Пациент Имя"]].filter(Boolean).join(" ") ??
+            "",
           Статус: r["Статус"] ?? "",
           Ночь: r["Ночь"] ?? false,
-          Стоимость: Number(r["Стоимость"] ?? 0),
-          "Итого, сом": r["Итого, сом"] != null ? Number(r["Итого, сом"]) : undefined,
-          "Наличные": r["Наличные"] != null ? Number(r["Наличные"]) : undefined,
-          "Безналичные": r["Безналичные"] != null ? Number(r["Безналичные"]) : undefined,
-          "Долг": r["Долг"] != null ? Number(r["Долг"]) : undefined,
+          Стоимость: parseNumberSafe(r["Стоимость"]),
+          "Итого, сом": r["Итого, сом"] != null ? parseNumberSafe(r["Итого, сом"]) : undefined,
+          "Наличные": r["Наличные"] != null ? parseNumberSafe(r["Наличные"]) : undefined,
+          "Безналичные": r["Безналичные"] != null ? parseNumberSafe(r["Безналичные"]) : undefined,
+          "Долг": r["Долг"] != null ? parseNumberSafe(r["Долг"]) : undefined,
         }));
 
         setAll(mapped);
+        CACHED_ALL = mapped;
 
         // Initialize date filter to latest by "Дата n8n"
         const latestRu = mapped
@@ -149,27 +206,48 @@ export const HomePage: React.FC = () => {
           })[0];
         if (latestRu) {
           const [dd, mm, yyyy] = latestRu.split(".");
-          setDate(`${yyyy}-${mm}-${dd}`);
+          const iso = `${yyyy}-${mm}-${dd}`;
+          setDate(iso);
+          CACHED_INIT_DATE = iso;
         }
       } catch (e: unknown) {
         console.error(e);
-        setErrorMsg(e instanceof Error ? e.message : String(e));
+        const errObj = (typeof e === "object" && e !== null ? e : {}) as {
+          message?: string;
+          error_description?: string;
+          hint?: string;
+          details?: string;
+          code?: string;
+        };
+        const msg =
+          errObj.message ??
+          errObj.error_description ??
+          errObj.hint ??
+          errObj.details ??
+          (typeof e === "object" ? JSON.stringify(e) : String(e));
+        setErrorMsg(msg);
       } finally {
         setLoading(false);
       }
     })();
   }, []);
 
-  // Fetch Services from Supabase (try both "Services" and "services")
+  // Build Services from FullAppointmentsView/AppointmentsView (no separate Services table needed)
   React.useEffect(() => {
     (async () => {
+      if (CACHED_SERVICES) {
+        setServices(CACHED_SERVICES as Array<Record<string, unknown>>);
+        setServicesLoading(false);
+        setServicesError(null);
+        return;
+      }
       try {
         setServicesLoading(true);
         setServicesError(null);
 
         let rows: Array<Record<string, unknown>> | null = null;
         let lastError: unknown = null;
-        for (const tableName of ["Services", "services"]) {
+        for (const tableName of ["FullAppointmentsView", "AppointmentsView"]) {
           const { data, error } = await supabase
             .schema("public")
             .from(tableName)
@@ -183,10 +261,90 @@ export const HomePage: React.FC = () => {
         }
         if (lastError) throw lastError;
 
-        setServices(rows ?? []);
+        type ServiceObj = {
+          ID: string;
+          "Название услуги": string;
+          "Категория": string;
+          "Стоимость, сом": number;
+        };
+
+        const map = new Map<string, ServiceObj>();
+        for (const r of rows ?? []) {
+          const get = (k: string) => (r as Record<string, unknown>)[k];
+
+          const sid =
+            String(
+              get("Услуга ID") ??
+                get("Service ID") ??
+                get("service_id") ??
+                get("serviceId") ??
+                get("Услуга") ??
+                get("Название услуги") ??
+                get("service_name") ??
+                get("ID") ??
+                ""
+            ) || "";
+          if (!sid) continue;
+
+          const name = String(
+            get("Название услуги") ??
+              get("Услуга") ??
+              get("service_name") ??
+              sid
+          );
+
+          const category = String(
+            get("Категория") ??
+              get("category") ??
+              get("Сотрудник ID") ??
+              get("Доктор ФИО") ??
+              get("Доктор") ??
+              ""
+          );
+
+          const priceVal =
+            (get("Стоимость, сом") ??
+              get("Стоимость") ??
+              get("Итого, сом") ??
+              get("price") ??
+              get("amount") ??
+              get("cost")) as number | string | null | undefined;
+          const price = Number(priceVal ?? 0);
+
+          const prev = map.get(sid);
+          if (!prev) {
+            map.set(sid, {
+              ID: sid,
+              "Название услуги": name,
+              "Категория": category,
+              "Стоимость, сом": price,
+            });
+          } else {
+            if (!prev["Название услуги"] && name) prev["Название услуги"] = name;
+            if (!prev["Категория"] && category) prev["Категория"] = category;
+            if (!prev["Стоимость, сом"] && price) prev["Стоимость, сом"] = price;
+          }
+        }
+
+        const servicesArr = Array.from(map.values()) as Array<Record<string, unknown>>;
+        setServices(servicesArr);
+        CACHED_SERVICES = servicesArr;
       } catch (e: unknown) {
         console.error(e);
-        setServicesError(e instanceof Error ? e.message : String(e));
+        const errObj = (typeof e === "object" && e !== null ? e : {}) as {
+          message?: string;
+          error_description?: string;
+          hint?: string;
+          details?: string;
+          code?: string;
+        };
+        const msg =
+          errObj.message ??
+          errObj.error_description ??
+          errObj.hint ??
+          errObj.details ??
+          (typeof e === "object" ? JSON.stringify(e) : String(e));
+        setServicesError(msg);
       } finally {
         setServicesLoading(false);
       }
@@ -207,7 +365,7 @@ export const HomePage: React.FC = () => {
       if (onlyNight && !(a.Ночь === true || a.Ночь === "true")) return false;
       if (paymentType === "cash" && !(Number(a["Наличные"] ?? 0) > 0)) return false;
       if (paymentType === "cashless" && !(Number(a["Безналичные"] ?? 0) > 0)) return false;
-      if (doctorId && !String(a["Доктор ID"]).includes(doctorId)) return false;
+      if (doctorId && !String(a["Доктор ФИО"]).includes(doctorId)) return false;
       return true;
     });
   }, [all, ruDateFromInput, status, onlyNight, paymentType, doctorId]);
@@ -283,9 +441,6 @@ export const HomePage: React.FC = () => {
                 </Typography>
                 <Typography variant="h4">{formatKGS(revenueSum)}</Typography>
                 <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 1 }}>
-                  <Typography variant="caption" sx={{ opacity: 0.9 }}>
-                    по отфильтрованным
-                  </Typography>
                   <ToggleButtonGroup
                     style={{ flexWrap: "nowrap" }}
                     size="small"
@@ -460,7 +615,7 @@ export const HomePage: React.FC = () => {
           </ToggleButtonGroup>
 
           <TextField
-            label="Доктор ID"
+            label="Доктор"
             value={doctorId}
             onChange={(e) => setDoctorId(e.target.value)}
             fullWidth

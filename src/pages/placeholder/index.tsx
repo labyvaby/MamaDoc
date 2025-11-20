@@ -13,7 +13,7 @@ export const UnderConstruction: React.FC = () => {
       </Typography>
       <Box>
         <Button component={RouterLink} to="/blog-posts" variant="contained">
-          Вернуться к постам
+          Вернуться назад
         </Button>
       </Box>
     </Stack>
