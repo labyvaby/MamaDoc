@@ -26,6 +26,7 @@ import { UnderConstruction } from "./pages/placeholder";
 import HomePage from "./pages/home";
 import AppointmentDetailsPage from "./pages/home/appointment";
 import PatientSearchPage from "./pages/patient-search";
+import ExpensesListPage from "./pages/expenses";
 
 // 🔥 SUPABASE
 import { dataProvider } from "@refinedev/supabase";
@@ -58,6 +59,10 @@ function App() {
                     show: "/categories/show/:id",
                     meta: { canDelete: true },
                   },
+                  {
+                    name: "expenses",
+                    list: "/expenses",
+                  },
                 ]}
                 options={{
                   syncWithLocation: true,
@@ -85,6 +90,7 @@ function App() {
                       element={<AppointmentDetailsPage />}
                     />
                     <Route path="patient-search" element={<PatientSearchPage />} />
+                    <Route path="expenses" element={<ExpensesListPage />} />
                     <Route path="*" element={<UnderConstruction />} />
                   </Route>
                 </Routes>

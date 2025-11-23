@@ -757,7 +757,7 @@ export const PatientSearchPage: React.FC = () => {
                     <Box
                       sx={{
                         position: "sticky",
-                        bottom: 0,
+                        bottom: "-30px",
                         left: 0,
                         right: 0,
                         width: "100%",
@@ -870,7 +870,6 @@ export const PatientSearchPage: React.FC = () => {
             </Card>
           </Grid>
 
-          {/* Right column: Patient snapshot (simple) */}
           <Grid item xs={12} md={4}>
             <Card
               variant="outlined"

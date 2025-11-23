@@ -17,18 +17,16 @@ import useMediaQuery from "@mui/material/useMediaQuery";
 import { useTheme, alpha } from "@mui/material/styles";
 
 
-import InfoOutlined from "@mui/icons-material/InfoOutlined";
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
-import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
+// import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
-import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
-import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
-import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
-import BlockOutlined from "@mui/icons-material/BlockOutlined";
-import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
-import AnalyticsOutlined from "@mui/icons-material/AnalyticsOutlined";
-import AppsOutlined from "@mui/icons-material/AppsOutlined";
+// import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
+// import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
+// import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
+// import BlockOutlined from "@mui/icons-material/BlockOutlined";
+// import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
+// import AnalyticsOutlined from "@mui/icons-material/AnalyticsOutlined";
 import MenuOutlined from "@mui/icons-material/MenuOutlined";
 
 import { useThemedLayoutContext } from "@refinedev/mui";
@@ -190,10 +188,11 @@ const SidebarSecondary: React.FC = () => {
       <List sx={{ py: 0 }}>
         <SidebarMenuItem to="/home" icon={<HomeOutlined />} label="Главная" collapsed={siderCollapsed} />
         <SidebarMenuItem to="/patient-search" icon={<SearchOutlined />} label="Поиск пациента" collapsed={siderCollapsed} />
-        <SidebarMenuItem to="/doctor-visits" icon={<LocalHospitalOutlined />} label="Приемы для врачей" collapsed={siderCollapsed} />
+        <SidebarMenuItem to="/expenses" icon={<PaymentsOutlined />} label="Расходы" collapsed={siderCollapsed} />
+        {/* <SidebarMenuItem to="/doctor-visits" icon={<LocalHospitalOutlined />} label="Приемы для врачей" collapsed={siderCollapsed} />
         <SidebarMenuItem to="/cash" icon={<PaymentsOutlined />} label="Касса" collapsed={siderCollapsed} />
         <SidebarMenuItem to="/access" icon={<BadgeOutlined />} label="СКУД" collapsed={siderCollapsed} />
-        <SidebarMenuItem to="/expenses" icon={<PaymentsOutlined />} label="Расходы" collapsed={siderCollapsed} />
+        // <SidebarMenuItem to="/expenses" icon={<PaymentsOutlined />} label="Расходы" collapsed={siderCollapsed} />
         <SidebarMenuItem to="/by-doctor" icon={<CalendarMonthOutlined />} label="Приемы по докторам" collapsed={siderCollapsed} />
         <SidebarMenuItem to="/by-day" icon={<CalendarMonthOutlined />} label="Приемы по дням" collapsed={siderCollapsed} />
         <SidebarMenuItem to="/procedures" icon={<ScienceOutlined />} label="Все процедуры" collapsed={siderCollapsed} />
@@ -205,12 +204,7 @@ const SidebarSecondary: React.FC = () => {
         <SidebarMenuItem to="/warehouse" icon={<Inventory2Outlined />} label="Склад" collapsed={siderCollapsed} />
         <SidebarMenuItem to="/blacklist" icon={<BlockOutlined />} label="Черный список" collapsed={siderCollapsed} />
         <SidebarMenuItem to="/diagnoses" icon={<ScienceOutlined />} label="Диагнозы" collapsed={siderCollapsed} />
-        <SidebarMenuItem to="/tests" icon={<ScienceOutlined />} label="Анализы" collapsed={siderCollapsed} />
-      </List>
-      <Divider sx={{ my: 1 }} />
-      <List sx={{ py: 0 }}>
-        <SidebarMenuItem to="/about" icon={<InfoOutlined />} label="О нас" collapsed={siderCollapsed} />
-        <SidebarMenuItem to="/apps" icon={<AppsOutlined />} label="App Gallery" collapsed={siderCollapsed} />
+        <SidebarMenuItem to="/tests" icon={<ScienceOutlined />} label="Анализы" collapsed={siderCollapsed} /> */}
       </List>
     </>
   );
