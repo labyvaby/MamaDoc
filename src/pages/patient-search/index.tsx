@@ -20,6 +20,8 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Tabs,
+  Tab,
 } from "@mui/material";
 import InputAdornment from "@mui/material/InputAdornment";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
@@ -31,7 +33,6 @@ import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
 import NotesOutlined from "@mui/icons-material/NotesOutlined";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
-import Pagination from "@mui/material/Pagination";
 import Avatar from "@mui/material/Avatar";
 
 import { Link as RouterLink } from "react-router";
@@ -63,6 +64,7 @@ type HistoryRow = {
 
 const PATIENTS_CACHE_KEY = "patientSearch.patients.v1";
 const HISTORY_CACHE_PREFIX = "patientSearch.history.v1.";
+const PATIENTS_SRC_KEY = "patientSearch.src.v1";
 
 const PER_PAGE = 40;
 
@@ -147,13 +149,22 @@ export const PatientSearchPage: React.FC = () => {
   const [visitService, setVisitService] = React.useState("");
   const [visitPrice, setVisitPrice] = React.useState<number | "">("");
 
+  // Вкладки: 0 - Пациенты, 1 - История, 2 - Карточка
+  const [activeTab, setActiveTab] = React.useState<number>(0);
+
+  // Постраничная подгрузка пациентов (не загружаем всё сразу)
+  const [patientsSrc, setPatientsSrc] = React.useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = React.useState(false);
+  const [hasMore, setHasMore] = React.useState(true);
+
   // Reload tick to re-run initial effect when user clicks "Обновить"
   const [reloadTick, setReloadTick] = React.useState(0);
-  const [page, setPage] = React.useState(1);
+  // legacy pagination removed
 
   const handleManualRefresh = React.useCallback(() => {
     try {
       localStorage.removeItem(PATIENTS_CACHE_KEY);
+      localStorage.removeItem(PATIENTS_SRC_KEY);
       if (selected) {
         try {
           localStorage.removeItem(HISTORY_CACHE_PREFIX + selected.id);
@@ -165,11 +176,17 @@ export const PatientSearchPage: React.FC = () => {
     setPatients([]);
     setHistory([]);
     setQuery("");
+    setPatientsSrc(null);
+    setHasMore(true);
     setReloadTick((x) => x + 1);
   }, [selected]);
 
   // Fetch patients from Supabase
   React.useEffect(() => {
+    if (activeTab !== 0) {
+      // загружать пациентов только когда активна вкладка "Пациенты"
+      return;
+    }
     (async () => {
       try {
         setLoading(true);
@@ -195,6 +212,7 @@ export const PatientSearchPage: React.FC = () => {
 
         let rows: Array<Record<string, unknown>> | null = null;
         let lastError: unknown = null;
+        let usedSrc: string | null = null;
 
         // Prefer direct Patients-like tables, then fallback to appointments views
         for (const tableName of [
@@ -215,12 +233,13 @@ export const PatientSearchPage: React.FC = () => {
           "FullAppointmentsView",
           "AppointmentsView"
         ]) {
-          const { data, error } = await supabase.schema("public").from(tableName).select("*");
+          const { data, error } = await supabase.schema("public").from(tableName).select("*").range(0, PER_PAGE - 1);
           if (!error) {
             const arr = (data ?? []) as Array<Record<string, unknown>>;
             // Break ONLY if this source actually has rows
             if (arr.length > 0) {
               rows = arr;
+              usedSrc = tableName;
               lastError = null;
               break;
             }
@@ -274,6 +293,11 @@ export const PatientSearchPage: React.FC = () => {
           return a.fio.localeCompare(b.fio, "ru");
         });
         setPatients(list);
+        setHasMore((rows ?? []).length === PER_PAGE);
+        if (usedSrc) {
+          setPatientsSrc(usedSrc);
+          try { localStorage.setItem(PATIENTS_SRC_KEY, usedSrc); } catch { /* ignore */ }
+        }
 
         // Preselect the first patient if any
         if (!selected && list.length > 0) {
@@ -305,13 +329,13 @@ export const PatientSearchPage: React.FC = () => {
         setLoading(false);
       }
     })();
-  }, [reloadTick]);
+  }, [reloadTick, activeTab]);
 
   // Fetch history when selected patient changes
   React.useEffect(() => {
     (async () => {
       try {
-        if (!selected) return;
+        if (!selected || !(activeTab === 1 || activeTab === 2)) return;
         setHistoryLoading(true);
         setHistoryError(null);
 
@@ -427,7 +451,7 @@ export const PatientSearchPage: React.FC = () => {
         setHistoryLoading(false);
       }
     })();
-  }, [selected]);
+  }, [selected, activeTab]);
 
   const filteredPatients = React.useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -440,19 +464,8 @@ export const PatientSearchPage: React.FC = () => {
     );
   }, [patients, query]);
 
-  // Pagination: 40 per page; search is global over all patients
-  const totalPages = Math.max(1, Math.ceil(filteredPatients.length / PER_PAGE));
-  React.useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
-  }, [page, totalPages]);
-  React.useEffect(() => {
-    setPage(1);
-  }, [query]);
-  const start = (page - 1) * PER_PAGE;
-  const visiblePatients = React.useMemo(
-    () => filteredPatients.slice(start, start + PER_PAGE),
-    [filteredPatients, start]
-  );
+  // Visible patients: show all loaded (server-paged via "Загрузить ещё")
+  const visiblePatients = filteredPatients;
 
   // Add patient
   const handleAddPatient = async () => {
@@ -665,6 +678,18 @@ export const PatientSearchPage: React.FC = () => {
           <Typography color="text.primary">Поиск пациента</Typography>
         </Breadcrumbs>
 
+        <Tabs
+          value={activeTab}
+          onChange={(_e, val) => setActiveTab(val)}
+          variant="scrollable"
+          scrollButtons="auto"
+          sx={{ mb: 2 }}
+        >
+          <Tab label="Пациенты" />
+          <Tab label="История" />
+          <Tab label="Карточка" />
+        </Tabs>
+
         <Grid container spacing={2}>
           {/* Left column: Patients */}
           <Grid item xs={12} md={4}>
@@ -753,31 +778,43 @@ export const PatientSearchPage: React.FC = () => {
                       );
                     })}
                   </List>
-                  {totalPages > 1 && (
-                    <Box
-                      sx={{
-                        position: "sticky",
-                        bottom: "-30px",
-                        left: 0,
-                        right: 0,
-                        width: "100%",
-                        bgcolor: (theme) => theme.palette.background.paper,
-                        borderTop: (theme) => `1px solid ${theme.palette.divider}`,
-                        zIndex: 2,
+                  <Box sx={{ px: 2, py: 1.25, display: "flex", justifyContent: "center" }}>
+                    <Button
+                      variant="outlined"
+                      onClick={async () => {
+                        if (loadingMore || !hasMore) return;
+                        setLoadingMore(true);
+                        try {
+                          const src = patientsSrc || (localStorage.getItem(PATIENTS_SRC_KEY) || "").trim() || null;
+                          if (!src) { setHasMore(false); return; }
+                          const from = patients.length;
+                          const to = from + PER_PAGE - 1;
+                          const { data, error } = await supabase.schema("public").from(src).select("*").range(from, to);
+                          if (!error && Array.isArray(data)) {
+                            const map = new Map<string, Patient>(patients.map(p => [p.id || `${p.fio}|${p.phone ?? ""}`, p]));
+                            for (const r of data as Array<Record<string, unknown>>) {
+                              const id = normalizePatientId(r);
+                              const fio = normalizeFio(r);
+                              const phone = normalizePhone(r);
+                              if (!id && !fio) continue;
+                              const key = id || `${fio}|${phone ?? ""}`;
+                              if (!map.has(key)) map.set(key, { id: id || key, fio, phone });
+                            }
+                            const next = Array.from(map.values()).sort((a, b) => a.fio.localeCompare(b.fio, "ru"));
+                            setPatients(next);
+                            setHasMore((data as Array<unknown>).length === PER_PAGE);
+                          } else {
+                            setHasMore(false);
+                          }
+                        } finally {
+                          setLoadingMore(false);
+                        }
                       }}
+                      disabled={loadingMore || !hasMore}
                     >
-                      <Box sx={{ px: 2, py: 1.25, display: "flex", justifyContent: "center" }}>
-                        <Pagination
-                          count={totalPages}
-                          page={page}
-                          onChange={(_e, val) => setPage(val)}
-                          size="small"
-                          showFirstButton
-                          showLastButton
-                        />
-                      </Box>
-                    </Box>
-                  )}
+                      {hasMore ? (loadingMore ? "Загрузка…" : "Загрузить ещё") : "Все загружено"}
+                    </Button>
+                  </Box>
                   </>
                 )}
               </CardContent>

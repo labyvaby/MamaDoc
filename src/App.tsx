@@ -95,7 +95,6 @@ function App() {
                   </Route>
                 </Routes>
 
-                {/* utility */}
                 <RefineKbar />
                 <UnsavedChangesNotifier />
                 <DocumentTitleHandler />

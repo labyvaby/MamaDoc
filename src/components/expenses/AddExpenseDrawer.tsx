@@ -364,7 +364,7 @@ export const AddExpenseDrawer: React.FC<AddExpenseDrawerProps> = ({
       setUploading(false);
       setCreating(false);
     }
-  }, [open]);
+  }, [open, previewUrl]);
 
   const handleChange =
     (field: keyof ExpenseFormValues) =>
@@ -454,7 +454,6 @@ export const AddExpenseDrawer: React.FC<AddExpenseDrawerProps> = ({
       if (created?.data && onCreated) onCreated(created.data as Expense);
       onClose();
     } catch (e: unknown) {
-      // eslint-disable-next-line no-console
       console.error("Create expense failed:", e);
       const message = e instanceof Error ? e.message : String(e);
       notify?.({

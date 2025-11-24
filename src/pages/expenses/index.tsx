@@ -1,12 +1,13 @@
 import React from "react";
 import { DataGrid, type GridColDef, type GridRenderCellParams } from "@mui/x-data-grid";
 import { List } from "@refinedev/mui";
-import { Stack, Button, TextField } from "@mui/material";
+import { Stack, Button, TextField, IconButton, Tooltip, Menu, MenuItem, ListItemIcon, ListItemText, Divider, Chip } from "@mui/material";
 import Autocomplete from "@mui/material/Autocomplete";
 import AddIcon from "@mui/icons-material/Add";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
+import MoreVert from "@mui/icons-material/MoreVert";
 import { useDataGrid } from "@refinedev/mui";
 import { formatKGS } from "../../utility/format";
 import type { Expense, EmployeesRow } from "./types";
@@ -25,17 +26,80 @@ const ActionsCell: React.FC<{
 }> = ({ row, onView, onEdit, onDelete }) => {
 
   return (
-    <Stack direction="row" spacing={1} justifyContent="flex-end" sx={{ width: "100%" }}>
-      <Button size="small" variant="text" startIcon={<VisibilityOutlined />} onClick={() => onView(row)}>
-        Просмотр
-      </Button>
-      <Button size="small" variant="text" startIcon={<EditOutlined />} onClick={() => onEdit(row)}>
-        Редактировать
-      </Button>
-      <Button size="small" color="error" variant="text" startIcon={<DeleteOutline />} onClick={() => onDelete(row)}>
-        Удалить
-      </Button>
+    <Stack direction="row" justifyContent="flex-end" sx={{ width: "100%", pr: 0.5 }}>
+      <ActionsMenu row={row} onView={onView} onEdit={onEdit} onDelete={onDelete} />
     </Stack>
+  );
+};
+
+const ActionsMenu: React.FC<{
+  row: Expense;
+  onView: (e: Expense) => void;
+  onEdit: (e: Expense) => void;
+  onDelete: (e: Expense) => void;
+}> = ({ row, onView, onEdit, onDelete }) => {
+  const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
+  const open = Boolean(anchorEl);
+  const handleOpen = (e: React.MouseEvent<HTMLButtonElement>) => setAnchorEl(e.currentTarget);
+  const handleClose = () => setAnchorEl(null);
+
+  return (
+    <>
+      <Tooltip title="Действия" arrow>
+        <IconButton
+          size="small"
+          aria-label="Действия"
+          onClick={handleOpen}
+          sx={{ bgcolor: "action.hover", "&:hover": { bgcolor: "action.selected" } }}
+        >
+          <MoreVert fontSize="small" />
+        </IconButton>
+      </Tooltip>
+      <Menu
+        anchorEl={anchorEl}
+        open={open}
+        onClose={handleClose}
+        elevation={3}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}
+      >
+        <MenuItem
+          onClick={() => {
+            handleClose();
+            onView(row);
+          }}
+        >
+          <ListItemIcon>
+            <VisibilityOutlined fontSize="small" />
+          </ListItemIcon>
+          <ListItemText primary="Просмотр" />
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            handleClose();
+            onEdit(row);
+          }}
+        >
+          <ListItemIcon>
+            <EditOutlined fontSize="small" />
+          </ListItemIcon>
+          <ListItemText primary="Редактировать" />
+        </MenuItem>
+        <Divider />
+        <MenuItem
+          onClick={() => {
+            handleClose();
+            onDelete(row);
+          }}
+          sx={{ color: "error.main" }}
+        >
+          <ListItemIcon sx={{ color: "error.main" }}>
+            <DeleteOutline fontSize="small" />
+          </ListItemIcon>
+          <ListItemText primary="Удалить" />
+        </MenuItem>
+      </Menu>
+    </>
   );
 };
 
@@ -163,7 +227,6 @@ const ExpensesListPage: React.FC = () => {
         supabase.from("expense_category").select("id, name"),
       ]);
 
-      // Объединяем сотрудников из двух таблиц и улучшаем ФИО, если во второй выборке оно полнее
       const nameById = new Map<string, string>();
 
       const considerEmp = (rec: unknown) => {
@@ -578,24 +641,35 @@ const ExpensesListPage: React.FC = () => {
         headerName: "Категория",
         flex: 0.6,
         minWidth: 140,
-        renderCell: (params: GridRenderCellParams<Expense>) => params.row.category ?? "-",
+        renderCell: (params: GridRenderCellParams<Expense>) =>
+          params.row.category ? (
+            <Chip size="small" label={params.row.category} variant="outlined" />
+          ) : (
+            "-"
+          ),
       },
       {
         field: "cash_amount",
         headerName: "Наличные",
         minWidth: 120,
+        align: "right",
+        headerAlign: "right",
         renderCell: (params: GridRenderCellParams<Expense>) => formatKGS(Number(params.row.cash_amount ?? 0)),
       },
       {
         field: "cashless_amount",
         headerName: "Безнал",
         minWidth: 120,
+        align: "right",
+        headerAlign: "right",
         renderCell: (params: GridRenderCellParams<Expense>) => formatKGS(Number(params.row.cashless_amount ?? 0)),
       },
       {
         field: "total_amount",
         headerName: "Итого",
         minWidth: 120,
+        align: "right",
+        headerAlign: "right",
         renderCell: (params: GridRenderCellParams<Expense>) => formatKGS(Number(params.row.total_amount ?? 0)),
       },
       {
@@ -611,7 +685,7 @@ const ExpensesListPage: React.FC = () => {
         align: "right",
         headerAlign: "right",
         sortable: false,
-        minWidth: 280,
+        minWidth: 120,
         renderCell: (params: GridRenderCellParams<Expense>) => (
           <ActionsCell
             row={params.row}
@@ -669,6 +743,19 @@ const ExpensesListPage: React.FC = () => {
         getRowId={(row: Expense) => row.id}
         disableRowSelectionOnClick
         autoHeight
+        density="compact"
+        sx={{
+          borderRadius: 2,
+          '& .MuiDataGrid-columnHeaders': {
+            backgroundColor: 'background.paper',
+          },
+          '& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within': {
+            outline: 'none',
+          },
+          '& .MuiDataGrid-row:hover': {
+            backgroundColor: 'action.hover',
+          },
+        }}
       />
 
       <AddExpenseDrawer
