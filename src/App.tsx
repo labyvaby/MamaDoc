@@ -22,17 +22,34 @@ import { Sidebar } from "./components/sidebar";
 import { MobileSidebarProvider } from "./components/sidebar/mobile-context";
 import { ColorModeContextProvider } from "./contexts/color-mode";
 
-import { UnderConstruction } from "./pages/placeholder";
-import HomePage from "./pages/home";
-import AppointmentDetailsPage from "./pages/home/appointment";
+import { lazy, Suspense, useEffect } from "react";
+const UnderConstruction = lazy(() =>
+  import("./pages/placeholder").then((m) => ({ default: m.UnderConstruction })),
+);
+const HomePage = lazy(() => import("./pages/home"));
+const AppointmentDetailsPage = lazy(() => import("./pages/home/appointment"));
 import PatientSearchPage from "./pages/patient-search";
-import ExpensesListPage from "./pages/expenses";
+const ExpensesListPage = lazy(() => import("./pages/expenses"));
 
 // 🔥 SUPABASE
 import { dataProvider } from "@refinedev/supabase";
 import { supabase } from "./utility/supabaseClient";
+import LinearProgress from "@mui/material/LinearProgress";
 
 function App() {
+  useEffect(() => {
+    const prefetch = () => {
+      import("./pages/home");
+      import("./pages/expenses");
+    };
+    const w = window as unknown as { requestIdleCallback?: (cb: () => void) => number };
+    const ric = w.requestIdleCallback;
+    if (typeof ric === "function") {
+      ric(prefetch);
+    } else {
+      setTimeout(prefetch, 1500);
+    }
+  }, []);
   return (
     <BrowserRouter>
       <RefineKbarProvider>
@@ -84,14 +101,42 @@ function App() {
                     }
                   >
                     <Route index element={<Navigate to="/home" replace />} />
-                    <Route path="home" element={<HomePage />} />
+                    <Route
+                      path="home"
+                      element={
+                        <Suspense fallback={<LinearProgress />}>
+                          <HomePage />
+                        </Suspense>
+                      }
+                    />
                     <Route
                       path="home/appointments/:id"
-                      element={<AppointmentDetailsPage />}
+                      element={
+                        <Suspense fallback={<LinearProgress />}>
+                          <AppointmentDetailsPage />
+                        </Suspense>
+                      }
                     />
-                    <Route path="patient-search" element={<PatientSearchPage />} />
-                    <Route path="expenses" element={<ExpensesListPage />} />
-                    <Route path="*" element={<UnderConstruction />} />
+                    <Route
+                      path="patient-search"
+                      element={<PatientSearchPage />}
+                    />
+                    <Route
+                      path="expenses"
+                      element={
+                        <Suspense fallback={<LinearProgress />}>
+                          <ExpensesListPage />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="*"
+                      element={
+                        <Suspense fallback={<LinearProgress />}>
+                          <UnderConstruction />
+                        </Suspense>
+                      }
+                    />
                   </Route>
                 </Routes>
 
