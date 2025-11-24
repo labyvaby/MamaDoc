@@ -1,7 +1,7 @@
 import React from "react";
 import { DataGrid, type GridColDef, type GridRenderCellParams } from "@mui/x-data-grid";
 import { List } from "@refinedev/mui";
-import { Stack, Button, TextField, IconButton, Tooltip, Menu, MenuItem, ListItemIcon, ListItemText, Divider, Chip } from "@mui/material";
+import { Stack, Button, TextField, IconButton, Tooltip, Menu, MenuItem, ListItemIcon, ListItemText, Divider, Chip, Fab } from "@mui/material";
 import Autocomplete from "@mui/material/Autocomplete";
 import AddIcon from "@mui/icons-material/Add";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
@@ -12,7 +12,7 @@ import { useDataGrid } from "@refinedev/mui";
 import { formatKGS } from "../../utility/format";
 import type { Expense, EmployeesRow } from "./types";
 import AddExpenseDrawer from "../../components/expenses/AddExpenseDrawer";
-import { EditExpenseModal } from "../../components/expenses/EditExpenseModal";
+import EditExpenseDrawer from "../../components/expenses/EditExpenseDrawer";
 import { DeleteExpenseDialog } from "../../components/expenses/DeleteExpenseDialog";
 import { ExpenseDetailsDrawer } from "../../components/expenses/ExpenseDetailsDrawer";
 import { supabase } from "../../utility/supabaseClient";
@@ -702,12 +702,13 @@ const ExpensesListPage: React.FC = () => {
   return (
     <List
       headerButtons={
-        <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center">
+        <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center" sx={{ width: 1, rowGap: 1, columnGap: 1 }}>
           <TextField
             size="small"
             label="Поиск"
             value={searchQuery}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
+            sx={{ width: { xs: 1, md: 240 } }}
           />
           <Autocomplete<EmployeesRow, false, false, false>
             size="small"
@@ -718,7 +719,8 @@ const ExpensesListPage: React.FC = () => {
             isOptionEqualToValue={(o, v) => o.id === v.id}
             onChange={(_e, newValue) => setEmployeeFilter(newValue?.id ?? "")}
             renderInput={(params) => <TextField {...params} label="Сотрудник" />}
-            sx={{ minWidth: 220 }}
+            sx={{ width: { xs: 1, md: 240 } }}
+            componentsProps={{ popper: { sx: { zIndex: (theme) => theme.zIndex.modal + 1 } } }}
           />
           <Autocomplete<{ id: string; name: string }, false, false, false>
             size="small"
@@ -729,9 +731,10 @@ const ExpensesListPage: React.FC = () => {
             isOptionEqualToValue={(o, v) => o.id === v.id}
             onChange={(_e, newValue) => setCategoryFilter(newValue?.name ?? "")}
             renderInput={(params) => <TextField {...params} label="Категория" />}
-            sx={{ minWidth: 200 }}
+            sx={{ width: { xs: 1, md: 220 } }}
+            componentsProps={{ popper: { sx: { zIndex: (theme) => theme.zIndex.modal + 1 } } }}
           />
-          <Button startIcon={<AddIcon />} variant="contained" onClick={() => setAddOpen(true)}>
+          <Button startIcon={<AddIcon />} variant="contained" onClick={() => setAddOpen(true)} sx={{ display: { xs: "none", md: "inline-flex" } }}>
             Добавить расход
           </Button>
         </Stack>
@@ -758,6 +761,22 @@ const ExpensesListPage: React.FC = () => {
         }}
       />
 
+      {/* Mobile FAB: Add Expense */}
+      <Fab
+        color="primary"
+        aria-label="add-expense"
+        onClick={() => setAddOpen(true)}
+        sx={{
+          position: "fixed",
+          bottom: { xs: 16, md: 24 },
+          right: { xs: 16, md: 24 },
+          display: { xs: "flex", md: "none" },
+          zIndex: (theme) => theme.zIndex.drawer + 1,
+        }}
+      >
+        <AddIcon />
+      </Fab>
+
       <AddExpenseDrawer
         open={addOpen}
         onClose={() => setAddOpen(false)}
@@ -765,7 +784,7 @@ const ExpensesListPage: React.FC = () => {
       />
 
       {selected && (
-        <EditExpenseModal
+        <EditExpenseDrawer
           open={editOpen}
           onClose={() => setEditOpen(false)}
           record={selected}

@@ -90,11 +90,13 @@ export const AddExpenseDrawer: React.FC<AddExpenseDrawerProps> = ({
   };
 
   const [employees, setEmployees] = React.useState<EmployeesRow[]>([]);
+  const [employeesLoading, setEmployeesLoading] = React.useState<boolean>(false);
   const [categories, setCategories] = React.useState<ExpenseCategory[]>([]);
 
   React.useEffect(() => {
     let cancelled = false;
     const load = async () => {
+      setEmployeesLoading(true);
       // Fast path: unified employees fetch via service
       try {
         const [emps, catRes2] = await Promise.all([
@@ -119,6 +121,7 @@ export const AddExpenseDrawer: React.FC<AddExpenseDrawerProps> = ({
           setCategories(cats2);
           if (emps.length > 0) {
             setEmployees(emps);
+            setEmployeesLoading(false);
             return;
           }
         }
@@ -341,6 +344,7 @@ export const AddExpenseDrawer: React.FC<AddExpenseDrawerProps> = ({
       if (!cancelled) {
         setEmployees(finalEmployees);
         setCategories(cats);
+        setEmployeesLoading(false);
       }
     };
     load();
@@ -510,7 +514,9 @@ export const AddExpenseDrawer: React.FC<AddExpenseDrawerProps> = ({
               <Grid item xs={12}>
                 <Autocomplete<EmployeesRow, false, false, false>
                   options={employees}
-                  noOptionsText=""
+                  loading={employeesLoading}
+                  loadingText="Загрузка…"
+                  noOptionsText={employeesLoading ? "Загрузка…" : "Нет вариантов"}
                   getOptionLabel={(option) => option.full_name || option.id}
                   isOptionEqualToValue={(o, v) => o.id === v.id}
                   value={employees.find((e) => e.id === values.employee_id) ?? null}
