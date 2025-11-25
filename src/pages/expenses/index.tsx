@@ -1,8 +1,10 @@
 import React from "react";
-import { DataGrid, type GridColDef, type GridRenderCellParams } from "@mui/x-data-grid";
+import { DataGrid, type GridColDef, type GridRenderCellParams, type GridColumnVisibilityModel } from "@mui/x-data-grid";
 import { List } from "@refinedev/mui";
-import { Stack, Button, TextField, IconButton, Tooltip, Menu, MenuItem, ListItemIcon, ListItemText, Divider, Chip, Fab } from "@mui/material";
+import { Box, Stack, Button, TextField, IconButton, Tooltip, Menu, MenuItem, ListItemIcon, ListItemText, Divider, Chip, Fab } from "@mui/material";
 import Autocomplete from "@mui/material/Autocomplete";
+import useMediaQuery from "@mui/material/useMediaQuery";
+import { useTheme } from "@mui/material/styles";
 import AddIcon from "@mui/icons-material/Add";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
@@ -612,6 +614,22 @@ const ExpensesListPage: React.FC = () => {
     setDeleteOpen(true);
   };
 
+  const theme = useTheme();
+  const isSm = useMediaQuery(theme.breakpoints.down("sm"));
+  const isMd = useMediaQuery(theme.breakpoints.down("md"));
+  const columnVisibility = React.useMemo<GridColumnVisibilityModel>(() => {
+    const model: GridColumnVisibilityModel = {};
+    if (isSm) {
+      model.id = false;
+      model.cash_amount = false;
+      model.cashless_amount = false;
+      model.created_at = false;
+    } else if (isMd) {
+      model.created_at = false;
+    }
+    return model;
+  }, [isSm, isMd]);
+
   const columns = React.useMemo<GridColDef<Expense>[]>(
     () => [
       {
@@ -734,15 +752,17 @@ const ExpensesListPage: React.FC = () => {
             sx={{ width: { xs: 1, md: 220 } }}
             componentsProps={{ popper: { sx: { zIndex: (theme) => theme.zIndex.modal + 1 } } }}
           />
-          <Button startIcon={<AddIcon />} variant="contained" onClick={() => setAddOpen(true)} sx={{ display: { xs: "none", md: "inline-flex" } }}>
+          <Button startIcon={<AddIcon />} variant="contained" onClick={() => setAddOpen(true)} sx={{ display: { xs: "none", lg: "inline-flex" } }}>
             Добавить расход
           </Button>
         </Stack>
       }
     >
+      <Box sx={{ px: { xs: 1.5, md: 2 }, pb: { xs: 2, md: 3 } }}>
       <DataGrid
         rows={filteredRows}
         columns={columns}
+        columnVisibilityModel={columnVisibility}
         getRowId={(row: Expense) => row.id}
         disableRowSelectionOnClick
         autoHeight
@@ -770,7 +790,7 @@ const ExpensesListPage: React.FC = () => {
           position: "fixed",
           bottom: { xs: 16, md: 24 },
           right: { xs: 16, md: 24 },
-          display: { xs: "flex", md: "none" },
+          display: { xs: "flex", md: "flex", lg: "none" },
           zIndex: (theme) => theme.zIndex.drawer + 1,
         }}
       >
@@ -807,6 +827,7 @@ const ExpensesListPage: React.FC = () => {
         onEdit={(rec) => handleEdit(rec)}
         onDelete={(rec) => handleDelete(rec)}
       />
+      </Box>
     </List>
   );
 };

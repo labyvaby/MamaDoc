@@ -25,10 +25,18 @@ export const SubHeader: React.FC<SubHeaderProps> = ({ title, actions }) => {
         backdropFilter: "saturate(180%) blur(10px)",
       }}
     >
-      <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2}>
+      <Stack
+        direction={{ xs: "column", md: "row" }}
+        alignItems={{ xs: "flex-start", md: "center" }}
+        justifyContent="space-between"
+        gap={1.25}
+        sx={{ width: 1 }}
+      >
         <Typography
           variant="h5"
           sx={{
+            fontSize: { xs: "1.1rem", sm: "1.25rem", md: "1.5rem" },
+            lineHeight: 1.2,
             background: (theme) =>
               theme.palette.mode === "dark"
                 ? `linear-gradient(90deg, ${theme.palette.primary.light}, ${theme.palette.primary.main})`
@@ -39,7 +47,20 @@ export const SubHeader: React.FC<SubHeaderProps> = ({ title, actions }) => {
         >
           {title}
         </Typography>
-        {actions && <Box>{actions}</Box>}
+        {actions && (
+          <Box
+            sx={{
+              width: { xs: 1, md: "auto" },
+              display: "flex",
+              justifyContent: { xs: "flex-start", md: "flex-end" },
+              alignItems: "center",
+              gap: 1,
+              flexWrap: "wrap",
+            }}
+          >
+            {actions}
+          </Box>
+        )}
       </Stack>
     </Paper>
   );

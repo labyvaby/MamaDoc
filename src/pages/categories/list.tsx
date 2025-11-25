@@ -1,4 +1,4 @@
-import { DataGrid, type GridColDef } from "@mui/x-data-grid";
+import { DataGrid, type GridColDef, type GridColumnVisibilityModel } from "@mui/x-data-grid";
 import {
   DeleteButton,
   EditButton,
@@ -7,9 +7,18 @@ import {
   useDataGrid,
 } from "@refinedev/mui";
 import React from "react";
+import useMediaQuery from "@mui/material/useMediaQuery";
+import { useTheme } from "@mui/material/styles";
 
 export const CategoryList = () => {
   const { dataGridProps } = useDataGrid({});
+  const theme = useTheme();
+  const isSm = useMediaQuery(theme.breakpoints.down("sm"));
+  const columnVisibility = React.useMemo<GridColumnVisibilityModel>(() => {
+    const m: GridColumnVisibilityModel = {};
+    if (isSm) m.id = false;
+    return m;
+  }, [isSm]);
 
   const columns = React.useMemo<GridColDef[]>(
     () => [
@@ -53,7 +62,20 @@ export const CategoryList = () => {
 
   return (
     <List>
-      <DataGrid {...dataGridProps} columns={columns} />
+      <DataGrid
+        {...dataGridProps}
+        columns={columns}
+        columnVisibilityModel={columnVisibility}
+        autoHeight
+        disableRowSelectionOnClick
+        density="compact"
+        sx={{
+          borderRadius: 2,
+          "& .MuiDataGrid-columnHeaders": {
+            backgroundColor: "background.paper",
+          },
+        }}
+      />
     </List>
   );
 };

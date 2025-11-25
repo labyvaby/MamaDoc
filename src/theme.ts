@@ -17,6 +17,9 @@ export function getAppTheme(mode: PaletteMode | string): Theme {
 
   let theme = createTheme({
     ...base,
+    breakpoints: {
+      values: { xs: 0, sm: 360, md: 768, lg: 1200, xl: 1536 },
+    },
     palette: {
       ...base.palette,
       mode: m,
@@ -60,6 +63,9 @@ export function getAppTheme(mode: PaletteMode | string): Theme {
             colorScheme: m,
           },
           body: {
+            margin: 0,
+            overflowX: "hidden",
+            WebkitTapHighlightColor: "transparent",
             backgroundImage:
               m === "dark"
                 ? "linear-gradient(180deg, rgba(15,18,24,0.9), rgba(15,18,24,0.9)), radial-gradient(1200px 600px at 0% 0%, rgba(67,97,238,0.06), transparent)"
@@ -85,7 +91,10 @@ export function getAppTheme(mode: PaletteMode | string): Theme {
       MuiToolbar: {
         styleOverrides: {
           root: {
-            minHeight: 64,
+            minHeight: 56,
+            "@media (min-width:768px)": {
+              minHeight: 64,
+            },
           },
         },
       },

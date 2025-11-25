@@ -19,10 +19,9 @@ const extractPathFromPublicUrl = (url: string): string | null => {
 export const uploadExpensePhoto = async (
   file: File
 ): Promise<{ publicUrl: string; path: string }> => {
-  const ext = file.name.split(".").pop() || "bin";
   const safeName = file.name.replace(/\s+/g, "-").toLowerCase();
   const unique = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : String(Date.now());
-  const filePath = `photos/${unique}-${safeName}.${ext}`;
+  const filePath = `photos/${unique}-${safeName}`;
 
   const { error: uploadError } = await supabase.storage.from(BUCKET).upload(filePath, file, {
     upsert: false,

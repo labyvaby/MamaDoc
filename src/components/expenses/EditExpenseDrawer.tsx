@@ -14,7 +14,7 @@ import {
 } from "@mui/material";
 import Autocomplete from "@mui/material/Autocomplete";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
-import { useInvalidate, useNotification, useUpdate } from "@refinedev/core";
+import { useInvalidate, useUpdate } from "@refinedev/core";
 import { deleteExpensePhotoByUrl, uploadExpensePhoto } from "../../services/storage";
 import { supabase } from "../../utility/supabaseClient";
 import { fetchEmployees } from "../../services/employees";
@@ -35,6 +35,56 @@ type ExpenseCategory = {
 const computeTotal = (cash: number, cashless: number, provided: number) => {
   if (Number.isFinite(provided) && provided > 0) return provided;
   return (Number.isFinite(cash) ? cash : 0) + (Number.isFinite(cashless) ? cashless : 0);
+};
+
+// Сжатие изображения перед загрузкой для ускорения upload
+const maybeCompressPhoto = async (file: File, maxDim = 1280, quality = 0.8): Promise<File> => {
+  try {
+    if (!file.type.startsWith("image/")) return file;
+    // пропускаем мелкие файлы
+    if (file.size <= 200 * 1024) return file;
+
+    const dataUrl: string = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = reject;
+      im.src = dataUrl;
+    });
+
+    let w = img.width;
+    let h = img.height;
+    if (w > h && w > maxDim) {
+      h = Math.round((h * maxDim) / w);
+      w = maxDim;
+    } else if (h >= w && h > maxDim) {
+      w = Math.round((w * maxDim) / h);
+      h = maxDim;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(img, 0, 0, w, h);
+
+    const blob: Blob | null = await new Promise((resolve) =>
+      canvas.toBlob((b) => resolve(b), "image/jpeg", quality),
+    );
+
+    if (!blob) return file;
+    const base = file.name.replace(/\.(png|jpg|jpeg|webp|gif|bmp|heic)$/i, "");
+    return new File([blob], `${base}.jpg`, { type: "image/jpeg" });
+  } catch {
+    return file;
+  }
 };
 
 // Helpers: типобезопасное извлечение id/ФИО без any
@@ -98,6 +148,7 @@ export const EditExpenseDrawer: React.FC<EditExpenseDrawerProps> = ({
   const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
   const [busyUpload, setBusyUpload] = React.useState(false);
   const [busySave, setBusySave] = React.useState(false);
+  const [removeExistingPhoto, setRemoveExistingPhoto] = React.useState(false);
 
   const [employees, setEmployees] = React.useState<EmployeesRow[]>([]);
   const [employeesLoading, setEmployeesLoading] = React.useState<boolean>(false);
@@ -105,7 +156,6 @@ export const EditExpenseDrawer: React.FC<EditExpenseDrawerProps> = ({
 
   const { mutateAsync: updateAsync } = useUpdate<Expense>();
   const invalidate = useInvalidate();
-  const { open: notify } = useNotification();
 
   // load employees + categories
   React.useEffect(() => {
@@ -204,6 +254,7 @@ export const EditExpenseDrawer: React.FC<EditExpenseDrawerProps> = ({
       }
       setBusyUpload(false);
       setBusySave(false);
+      setRemoveExistingPhoto(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, record]);
@@ -230,7 +281,17 @@ export const EditExpenseDrawer: React.FC<EditExpenseDrawerProps> = ({
     if (file) {
       const url = URL.createObjectURL(file);
       setPreviewUrl(url);
+      setRemoveExistingPhoto(false);
     }
+  };
+
+  const handleRemovePhoto = () => {
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+    }
+    setPreviewUrl(null);
+    setValues((s) => ({ ...s, photoFile: null, photo: null }));
+    setRemoveExistingPhoto(true);
   };
 
   const handleSubmit = async () => {
@@ -241,7 +302,8 @@ export const EditExpenseDrawer: React.FC<EditExpenseDrawerProps> = ({
       const hadOldPhoto = Boolean(record.photo);
 
       if (values.photoFile) {
-        const { publicUrl } = await uploadExpensePhoto(values.photoFile);
+        const fileForUpload = await maybeCompressPhoto(values.photoFile);
+        const { publicUrl } = await uploadExpensePhoto(fileForUpload);
         newPublicUrl = publicUrl;
       }
 
@@ -253,7 +315,7 @@ export const EditExpenseDrawer: React.FC<EditExpenseDrawerProps> = ({
         total_amount: computeTotal(values.cash_amount ?? 0, values.cashless_amount ?? 0, values.total_amount ?? 0),
         comment: values.comment ?? null,
         category: values.category ?? null,
-        photo: newPublicUrl ?? record.photo ?? null,
+        photo: removeExistingPhoto ? null : (newPublicUrl ?? record.photo ?? null),
       };
 
       const updated = await updateAsync({
@@ -264,13 +326,10 @@ export const EditExpenseDrawer: React.FC<EditExpenseDrawerProps> = ({
 
       if (values.photoFile && hadOldPhoto && record.photo) {
         await deleteExpensePhotoByUrl(record.photo);
+      } else if (removeExistingPhoto && hadOldPhoto && record.photo) {
+        await deleteExpensePhotoByUrl(record.photo);
       }
 
-      notify?.({
-        type: "success",
-        message: "Расход обновлён",
-        description: values.name,
-      });
 
       await invalidate({
         resource: "expenses",
@@ -280,14 +339,8 @@ export const EditExpenseDrawer: React.FC<EditExpenseDrawerProps> = ({
       if (updated?.data && onUpdated) onUpdated(updated.data as Expense);
       onClose();
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
       // eslint-disable-next-line no-console
       console.error("Update expense failed:", e);
-      notify?.({
-        type: "error",
-        message: "Ошибка при обновлении",
-        description: message || "Неизвестная ошибка",
-      });
     } finally {
       setBusySave(false);
       setBusyUpload(false);
@@ -297,20 +350,31 @@ export const EditExpenseDrawer: React.FC<EditExpenseDrawerProps> = ({
   const busy = busyUpload || busySave;
 
   return (
-    <Drawer anchor="right" open={open} onClose={busy ? undefined : onClose}>
-      <Box sx={{ width: "30vw", minWidth: 320 }} role="presentation">
-        <Stack direction="row" alignItems="center" justifyContent="space-between" p={2}>
+    <Drawer
+      anchor="right"
+      open={open}
+      onClose={busy ? undefined : onClose}
+      PaperProps={{ sx: { width: { xs: "100%", sm: 420, md: "30vw" }, maxWidth: "100vw", overflowX: "hidden", boxSizing: "border-box", mx: 0 } }}
+    >
+      <Box sx={{ width: 1, minWidth: 0 }} role="presentation">
+        <Stack
+          direction="row"
+          alignItems="center"
+          justifyContent="space-between"
+          p={{ xs: 1.5, md: 2 }}
+          sx={{ borderBottom: (theme) => `1px solid ${theme.palette.divider}` }}
+        >
           <Typography variant="h6">Редактировать расход</Typography>
           <IconButton onClick={busy ? undefined : onClose} aria-label="Закрыть">
             <CloseOutlined />
           </IconButton>
         </Stack>
 
-        <Divider />
+        <Divider sx={{ my: { xs: 1.5, md: 2 } }} />
 
-        <Box p={2}>
+        <Box p={{ xs: 1.5, md: 2 }}>
           <Stack spacing={2}>
-            <Grid container spacing={2}>
+            <Grid container spacing={{ xs: 1, md: 2 }}>
               <Grid item xs={12}>
                 <TextField
                   label="Название"
@@ -380,7 +444,7 @@ export const EditExpenseDrawer: React.FC<EditExpenseDrawerProps> = ({
               </Grid>
 
               <Grid item xs={12}>
-                <Stack direction="row" spacing={2} alignItems="center">
+                <Stack direction="row" spacing={1.5} alignItems="center">
                   <Button variant="outlined" component="label" disabled={busy}>
                     Выбрать новое фото
                     <input type="file" hidden accept="image/*" onChange={handleFileChange} />
@@ -388,12 +452,22 @@ export const EditExpenseDrawer: React.FC<EditExpenseDrawerProps> = ({
                   {previewUrl ? (
                     <Stack direction="row" spacing={1} alignItems="center">
                       <Avatar variant="rounded" src={previewUrl} sx={{ width: 64, height: 64 }} />
-                      <Typography variant="body2" color="text.secondary">Новое фото</Typography>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Typography variant="body2" color="text.secondary">Новое фото</Typography>
+                        <Button size="small" color="error" onClick={handleRemovePhoto}>
+                          Удалить фото
+                        </Button>
+                      </Stack>
                     </Stack>
                   ) : record.photo ? (
                     <Stack direction="row" spacing={1} alignItems="center">
                       <Avatar variant="rounded" src={record.photo} sx={{ width: 64, height: 64 }} />
-                      <Typography variant="body2" color="text.secondary">Текущее фото</Typography>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Typography variant="body2" color="text.secondary">Текущее фото</Typography>
+                        <Button size="small" color="error" onClick={handleRemovePhoto}>
+                          Удалить фото
+                        </Button>
+                      </Stack>
                     </Stack>
                   ) : (
                     <Typography variant="body2" color="text.secondary">Фото отсутствует</Typography>
@@ -404,9 +478,9 @@ export const EditExpenseDrawer: React.FC<EditExpenseDrawerProps> = ({
           </Stack>
         </Box>
 
-        <Divider />
+        <Divider sx={{ my: { xs: 1.5, md: 2 } }} />
 
-        <Box p={2} display="flex" justifyContent="flex-end" gap={1}>
+        <Box p={{ xs: 1.5, md: 2 }} display="flex" justifyContent="flex-end" gap={1.5}>
           <Button onClick={onClose} disabled={busy}>
             Отмена
           </Button>

@@ -9,7 +9,9 @@ import {
   Stack,
   CircularProgress,
 } from "@mui/material";
-import { useDelete, useInvalidate, useNotification } from "@refinedev/core";
+import useMediaQuery from "@mui/material/useMediaQuery";
+import { useTheme } from "@mui/material/styles";
+import { useDelete, useInvalidate } from "@refinedev/core";
 import type { Expense } from "../../pages/expenses/types";
 import { deleteExpensePhotoByUrl } from "../../services/storage";
 
@@ -29,7 +31,8 @@ export const DeleteExpenseDialog: React.FC<DeleteExpenseDialogProps> = ({
   const { mutateAsync: deleteAsync } = useDelete();
   const [busy, setBusy] = React.useState(false);
   const invalidate = useInvalidate();
-  const { open: notify } = useNotification();
+  const theme = useTheme();
+  const fullScreen = useMediaQuery(theme.breakpoints.down("sm"));
 
   const handleDelete = async () => {
     if (!record) return;
@@ -56,28 +59,18 @@ export const DeleteExpenseDialog: React.FC<DeleteExpenseDialogProps> = ({
         invalidates: ["list", "detail"],
       });
 
-      notify?.({
-        type: "success",
-        message: "Расход удалён",
-        description: record.name,
-      });
-
       if (onDeleted) onDeleted(record.id);
       onClose();
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      notify?.({
-        type: "error",
-        message: "Ошибка при удалении",
-        description: message || "Неизвестная ошибка",
-      });
+      // eslint-disable-next-line no-console
+      console.error("Delete expense failed:", e);
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Dialog open={open} onClose={busy ? undefined : onClose} fullWidth maxWidth="xs">
+    <Dialog open={open} onClose={busy ? undefined : onClose} fullWidth maxWidth="xs" fullScreen={fullScreen}>
       <DialogTitle>Удалить расход</DialogTitle>
       <DialogContent>
         <DialogContentText>

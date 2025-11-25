@@ -11,13 +11,15 @@ import {
   Stack,
   TextField,
   Typography,
+  Paper,
 } from "@mui/material";
 import Autocomplete from "@mui/material/Autocomplete";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
-import { useCreate, useInvalidate, useNotification } from "@refinedev/core";
+import { useCreate, useInvalidate } from "@refinedev/core";
 import { uploadExpensePhoto } from "../../services/storage";
 import { supabase } from "../../utility/supabaseClient";
 import { fetchEmployees } from "../../services/employees";
+import { formatKGS } from "../../utility/format";
 import type { Expense, ExpenseFormValues, EmployeesRow } from "../../pages/expenses/types";
 
 type AddExpenseDrawerProps = {
@@ -356,7 +358,6 @@ export const AddExpenseDrawer: React.FC<AddExpenseDrawerProps> = ({
 
   const { mutateAsync: createAsync } = useCreate<Expense>();
   const invalidate = useInvalidate();
-  const { open: notify } = useNotification();
 
   React.useEffect(() => {
     if (!open) {
@@ -399,6 +400,14 @@ export const AddExpenseDrawer: React.FC<AddExpenseDrawerProps> = ({
     }
   };
 
+  const handleRemovePhoto = () => {
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+    }
+    setPreviewUrl(null);
+    setValues((s) => ({ ...s, photoFile: null, photo: null }));
+  };
+
   const computeTotal = (cash: number, cashless: number, provided: number) => {
     // Если total задан и > 0 — используем его, иначе сумма cash + cashless
     if (Number.isFinite(provided) && provided > 0) return provided;
@@ -408,6 +417,56 @@ export const AddExpenseDrawer: React.FC<AddExpenseDrawerProps> = ({
     );
   };
 
+  // Сжатие изображения перед загрузкой для ускорения upload
+  const maybeCompressPhoto = async (file: File, maxDim = 1280, quality = 0.8): Promise<File> => {
+    try {
+      if (!file.type.startsWith("image/")) return file;
+      // пропускаем мелкие файлы
+      if (file.size <= 200 * 1024) return file;
+
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const im = new Image();
+        im.onload = () => resolve(im);
+        im.onerror = reject;
+        im.src = dataUrl;
+      });
+
+      let w = img.width;
+      let h = img.height;
+      if (w > h && w > maxDim) {
+        h = Math.round((h * maxDim) / w);
+        w = maxDim;
+      } else if (h >= w && h > maxDim) {
+        w = Math.round((w * maxDim) / h);
+        h = maxDim;
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return file;
+      ctx.drawImage(img, 0, 0, w, h);
+
+      const blob: Blob | null = await new Promise((resolve) =>
+        canvas.toBlob((b) => resolve(b), "image/jpeg", quality),
+      );
+
+      if (!blob) return file;
+      const base = file.name.replace(/\.(png|jpg|jpeg|webp|gif|bmp|heic)$/i, "");
+      return new File([blob], `${base}.jpg`, { type: "image/jpeg" });
+    } catch {
+      return file;
+    }
+  };
+
   const handleSubmit = async () => {
     try {
       setUploading(true);
@@ -415,7 +474,8 @@ export const AddExpenseDrawer: React.FC<AddExpenseDrawerProps> = ({
 
       let publicUrl: string | null = null;
       if (values.photoFile) {
-        const { publicUrl: url } = await uploadExpensePhoto(values.photoFile);
+        const fileForUpload = await maybeCompressPhoto(values.photoFile);
+        const { publicUrl: url } = await uploadExpensePhoto(fileForUpload);
         publicUrl = url;
       }
 
@@ -444,11 +504,6 @@ export const AddExpenseDrawer: React.FC<AddExpenseDrawerProps> = ({
         values: payload,
       });
 
-      notify?.({
-        type: "success",
-        message: "Расход успешно создан",
-        description: values.name,
-      });
 
       await invalidate({
         resource: "expenses",
@@ -459,12 +514,6 @@ export const AddExpenseDrawer: React.FC<AddExpenseDrawerProps> = ({
       onClose();
     } catch (e: unknown) {
       console.error("Create expense failed:", e);
-      const message = e instanceof Error ? e.message : String(e);
-      notify?.({
-        type: "error",
-        message: "Ошибка при создании расхода",
-        description: message || "Неизвестная ошибка",
-      });
     } finally {
       setCreating(false);
       setUploading(false);
@@ -474,13 +523,19 @@ export const AddExpenseDrawer: React.FC<AddExpenseDrawerProps> = ({
   const busy = uploading || creating;
 
   return (
-    <Drawer anchor="right" open={open} onClose={busy ? undefined : onClose}>
-      <Box sx={{ width: "30vw", minWidth: 320 }} role="presentation">
+    <Drawer
+      anchor="right"
+      open={open}
+      onClose={busy ? undefined : onClose}
+      PaperProps={{ sx: { width: { xs: "100%", sm: 420, md: "30vw" }, maxWidth: "100vw", overflowX: "hidden", boxSizing: "border-box", mx: 0 } }}
+    >
+      <Box sx={{ width: 1, minWidth: 0 }} role="presentation">
         <Stack
           direction="row"
           alignItems="center"
           justifyContent="space-between"
-          p={2}
+          p={{ xs: 1.5, md: 2 }}
+          sx={{ borderBottom: (theme) => `1px solid ${theme.palette.divider}` }}
         >
           <Typography variant="h6">Новый расход</Typography>
           <IconButton onClick={busy ? undefined : onClose} aria-label="Закрыть">
@@ -488,11 +543,11 @@ export const AddExpenseDrawer: React.FC<AddExpenseDrawerProps> = ({
           </IconButton>
         </Stack>
 
-        <Divider />
+        <Divider sx={{ my: { xs: 1.5, md: 2 } }} />
 
-        <Box p={2}>
+        <Box p={{ xs: 1.5, md: 2 }}>
           <Stack spacing={2}>
-            <Grid container spacing={2}>
+            <Grid container spacing={{ xs: 1, md: 2 }}>
               <Grid item xs={12}>
                 <TextField
                   label="Название"
@@ -528,9 +583,15 @@ export const AddExpenseDrawer: React.FC<AddExpenseDrawerProps> = ({
                 <TextField
                   label="Наличные"
                   type="number"
-                  value={values.cash_amount}
+                  value={values.cash_amount === 0 ? "" : values.cash_amount}
                   onChange={handleChange("cash_amount")}
                   fullWidth
+                  inputProps={{ inputMode: "decimal" }}
+                  sx={{
+                    "& input[type=number]": { MozAppearance: "textfield" },
+                    "& input[type=number]::-webkit-outer-spin-button": { WebkitAppearance: "none", margin: 0 },
+                    "& input[type=number]::-webkit-inner-spin-button": { WebkitAppearance: "none", margin: 0 },
+                  }}
                 />
               </Grid>
 
@@ -538,25 +599,36 @@ export const AddExpenseDrawer: React.FC<AddExpenseDrawerProps> = ({
                 <TextField
                   label="Безнал"
                   type="number"
-                  value={values.cashless_amount}
+                  value={values.cashless_amount === 0 ? "" : values.cashless_amount}
                   onChange={handleChange("cashless_amount")}
                   fullWidth
+                  inputProps={{ inputMode: "decimal" }}
+                  sx={{
+                    "& input[type=number]": { MozAppearance: "textfield" },
+                    "& input[type=number]::-webkit-outer-spin-button": { WebkitAppearance: "none", margin: 0 },
+                    "& input[type=number]::-webkit-inner-spin-button": { WebkitAppearance: "none", margin: 0 },
+                  }}
                 />
               </Grid>
 
               <Grid item xs={12}>
-                <TextField
-                  label="Итого"
-                  type="number"
-                  value={computeTotal(
-                    values.cash_amount ?? 0,
-                    values.cashless_amount ?? 0,
-                    values.total_amount ?? 0
-                  )}
-                  disabled
-                  helperText="Итого рассчитывается: наличные + безнал"
-                  fullWidth
-                />
+                <Paper variant="elevation" elevation={0} sx={{ p: { xs: 1.25, md: 1.5 }, display: "flex", alignItems: "center", justifyContent: "space-between", borderRadius: 1.5, border: "none" }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Итого
+                  </Typography>
+                  <Typography variant="h6">
+                    {formatKGS(
+                      computeTotal(
+                        values.cash_amount ?? 0,
+                        values.cashless_amount ?? 0,
+                        values.total_amount ?? 0
+                      )
+                    )}
+                  </Typography>
+                </Paper>
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75, display: "block" }}>
+                  Рассчитывается автоматически: наличные + безнал
+                </Typography>
               </Grid>
 
               <Grid item xs={12}>
@@ -571,7 +643,7 @@ export const AddExpenseDrawer: React.FC<AddExpenseDrawerProps> = ({
               </Grid>
 
               <Grid item xs={12}>
-                <Stack direction="row" spacing={2} alignItems="center">
+                <Stack direction="row" spacing={1.5} alignItems="center">
                   <Button variant="outlined" component="label" disabled={busy}>
                     Выбрать фото
                     <input
@@ -588,9 +660,14 @@ export const AddExpenseDrawer: React.FC<AddExpenseDrawerProps> = ({
                         src={previewUrl}
                         sx={{ width: 64, height: 64 }}
                       />
-                      <Typography variant="body2" color="text.secondary">
-                        Предпросмотр
-                      </Typography>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Typography variant="body2" color="text.secondary">
+                          Предпросмотр
+                        </Typography>
+                        <Button size="small" color="error" onClick={handleRemovePhoto}>
+                          Удалить фото
+                        </Button>
+                      </Stack>
                     </Stack>
                   ) : (
                     <Typography variant="body2" color="text.secondary">
@@ -603,9 +680,9 @@ export const AddExpenseDrawer: React.FC<AddExpenseDrawerProps> = ({
           </Stack>
         </Box>
 
-        <Divider />
+        <Divider sx={{ my: { xs: 1.5, md: 2 } }} />
 
-        <Box p={2} display="flex" justifyContent="flex-end" gap={1}>
+        <Box p={{ xs: 1.5, md: 2 }} display="flex" justifyContent="flex-end" gap={1.5}>
           <Button onClick={onClose} disabled={busy}>
             Отмена
           </Button>

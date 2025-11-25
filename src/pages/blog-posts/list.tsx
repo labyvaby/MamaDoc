@@ -1,5 +1,5 @@
 import { Typography } from "@mui/material";
-import { DataGrid, type GridColDef } from "@mui/x-data-grid";
+import { DataGrid, type GridColDef, type GridColumnVisibilityModel } from "@mui/x-data-grid";
 import { useMany } from "@refinedev/core";
 import {
   DateField,
@@ -10,9 +10,33 @@ import {
   useDataGrid,
 } from "@refinedev/mui";
 import React from "react";
+import useMediaQuery from "@mui/material/useMediaQuery";
+import { useTheme } from "@mui/material/styles";
+
+type BlogPostRow = {
+  id: number | string;
+  title?: string;
+  content?: string;
+  category?: { id?: string | number } | null;
+  status?: string;
+  createdAt?: string | Date | null;
+};
 
 export const BlogPostList = () => {
   const { result, dataGridProps } = useDataGrid({});
+  const theme = useTheme();
+  const isSm = useMediaQuery(theme.breakpoints.down("sm"));
+  const isMd = useMediaQuery(theme.breakpoints.down("md"));
+  const columnVisibility = React.useMemo<GridColumnVisibilityModel>(() => {
+    const m: GridColumnVisibilityModel = {};
+    if (isSm) {
+      m.id = false;
+      m.createdAt = false;
+    } else if (isMd) {
+      m.id = false;
+    }
+    return m;
+  }, [isSm, isMd]);
 
   const {
     result: { data: categories },
@@ -20,7 +44,7 @@ export const BlogPostList = () => {
   } = useMany({
     resource: "categories",
     ids:
-      result?.data?.map((item: any) => item?.category?.id).filter(Boolean) ??
+      ((result?.data as BlogPostRow[] | undefined)?.map((item) => item.category?.id).filter(Boolean) as (string | number)[]) ??
       [],
     queryOptions: {
       enabled: !!result?.data,
@@ -120,7 +144,20 @@ export const BlogPostList = () => {
 
   return (
     <List>
-      <DataGrid {...dataGridProps} columns={columns} />
+      <DataGrid
+        {...dataGridProps}
+        columns={columns}
+        columnVisibilityModel={columnVisibility}
+        autoHeight
+        disableRowSelectionOnClick
+        density="compact"
+        sx={{
+          borderRadius: 2,
+          "& .MuiDataGrid-columnHeaders": {
+            backgroundColor: "background.paper",
+          },
+        }}
+      />
     </List>
   );
 };

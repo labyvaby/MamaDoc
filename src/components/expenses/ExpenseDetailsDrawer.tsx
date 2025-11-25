@@ -31,8 +31,13 @@ export const ExpenseDetailsDrawer: React.FC<ExpenseDetailsDrawerProps> = ({
 }) => {
   if (!record) {
     return (
-      <Drawer anchor="right" open={open} onClose={onClose}>
-        <Box sx={{ width: { xs: 360, sm: 420 } }} p={2}>
+      <Drawer
+        anchor="right"
+        open={open}
+        onClose={onClose}
+        PaperProps={{ sx: { width: { xs: "100vw", sm: 420, md: "30vw" } } }}
+      >
+        <Box sx={{ width: 1, minWidth: 320 }} p={{ xs: 1.5, md: 2 }}>
           <Typography variant="h6">Нет данных</Typography>
         </Box>
       </Drawer>
@@ -40,17 +45,28 @@ export const ExpenseDetailsDrawer: React.FC<ExpenseDetailsDrawerProps> = ({
   }
 
   return (
-    <Drawer anchor="right" open={open} onClose={onClose}>
-      <Box sx={{ width: { xs: 360, sm: 420 } }} p={2}>
-        <Stack direction="row" justifyContent="space-between" alignItems="center">
+    <Drawer
+      anchor="right"
+      open={open}
+      onClose={onClose}
+      PaperProps={{ sx: { width: { xs: "100vw", sm: 420, md: "30vw" } } }}
+    >
+      <Box sx={{ width: 1, minWidth: 320 }} p={{ xs: 1.5, md: 2 }}>
+        <Stack
+          direction="row"
+          justifyContent="space-between"
+          alignItems="center"
+          p={{ xs: 1.5, md: 2 }}
+          sx={{ borderBottom: (theme) => `1px solid ${theme.palette.divider}` }}
+        >
           <Typography variant="h6">Детали расхода</Typography>
-          <Stack direction="row" spacing={1}>
+          <Stack direction="row" spacing={1.25}>
             <Button variant="outlined" onClick={() => onEdit?.(record)}>Редактировать</Button>
             <Button variant="outlined" color="error" onClick={() => onDelete?.(record)}>Удалить</Button>
           </Stack>
         </Stack>
 
-        <Divider sx={{ my: 2 }} />
+        <Divider sx={{ my: { xs: 1.5, md: 2 } }} />
 
         <Stack spacing={2}>
           {record.photo ? (
@@ -75,7 +91,7 @@ export const ExpenseDetailsDrawer: React.FC<ExpenseDetailsDrawerProps> = ({
             </Box>
           )}
 
-          <Grid container spacing={1}>
+          <Grid container spacing={{ xs: 1.25, md: 1.5 }}>
             <Grid item xs={5}>
               <Typography variant="body2" color="text.secondary">Название</Typography>
             </Grid>
@@ -115,7 +131,7 @@ export const ExpenseDetailsDrawer: React.FC<ExpenseDetailsDrawerProps> = ({
               <Typography variant="body2" color="text.secondary">Сотрудник</Typography>
             </Grid>
             <Grid item xs={7}>
-              <Typography variant="body1">{employeeFullName ?? record.employee_id ?? "-"}</Typography>
+              <Typography variant="body1">{employeeFullName ?? "-"}</Typography>
             </Grid>
 
             <Grid item xs={5}>
@@ -125,19 +141,7 @@ export const ExpenseDetailsDrawer: React.FC<ExpenseDetailsDrawerProps> = ({
               <Typography variant="body1" sx={{ whiteSpace: "pre-wrap" }}>{record.comment ?? "-"}</Typography>
             </Grid>
 
-            <Grid item xs={5}>
-              <Typography variant="body2" color="text.secondary">Создано</Typography>
-            </Grid>
-            <Grid item xs={7}>
-              <Typography variant="body1">{new Date(record.created_at).toLocaleString("ru-RU")}</Typography>
-            </Grid>
 
-            <Grid item xs={5}>
-              <Typography variant="body2" color="text.secondary">Обновлено</Typography>
-            </Grid>
-            <Grid item xs={7}>
-              <Typography variant="body1">{new Date(record.updated_at).toLocaleString("ru-RU")}</Typography>
-            </Grid>
           </Grid>
         </Stack>
       </Box>

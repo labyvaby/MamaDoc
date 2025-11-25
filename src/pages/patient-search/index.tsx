@@ -35,6 +35,8 @@ import NotesOutlined from "@mui/icons-material/NotesOutlined";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
 import Avatar from "@mui/material/Avatar";
 import Pagination from "@mui/material/Pagination";
+import useMediaQuery from "@mui/material/useMediaQuery";
+import { useTheme } from "@mui/material/styles";
 
 import { Link as RouterLink } from "react-router";
 import { SubHeader } from "../../components";
@@ -54,7 +56,7 @@ type HistoryRow = {
   "Дата n8n"?: string;
   "Доктор ФИО"?: string;
   "Пациент ФИО"?: string;
-  "Услуга"?: string;
+  Услуга?: string;
   "Услуга ID"?: string;
   Статус?: string;
   Стоимость?: number;
@@ -68,10 +70,7 @@ const HISTORY_CACHE_PREFIX = "patientSearch.history.v1.";
 const PATIENTS_SRC_KEY = "patientSearch.src.v1";
 
 const PER_PAGE = 40;
-const NAME_COLS = ["ФИО", "Пациент ФИО", "full_name", "Full Name", "name"];
-const PHONE_COLS = ["Телефон", "phone", "Номер телефона", "mobile", "phone_number", "mobile_phone", "tel", "Телефон 1", "Телефон пациента"];
 
-type PatientsCache = { ts: number; patients: Patient[]; selectedId?: string | null };
 type HistoryCache = { ts: number; items: HistoryRow[] };
 
 // Utilities
@@ -84,9 +83,17 @@ function normalizeFio(row: Record<string, unknown>): string {
     (row["Full Name"] as string) ??
     (row["name"] as string) ??
     [
-      (row["Фамилия"] as string) ?? (row["Пациент Фамилия"] as string) ?? (row["last_name"] as string) ?? (row["surname"] as string),
-      (row["Имя"] as string) ?? (row["Пациент Имя"] as string) ?? (row["first_name"] as string) ?? (row["given_name"] as string),
-      (row["Отчество"] as string) ?? (row["Пациент Отчество"] as string) ?? (row["middle_name"] as string),
+      (row["Фамилия"] as string) ??
+        (row["Пациент Фамилия"] as string) ??
+        (row["last_name"] as string) ??
+        (row["surname"] as string),
+      (row["Имя"] as string) ??
+        (row["Пациент Имя"] as string) ??
+        (row["first_name"] as string) ??
+        (row["given_name"] as string),
+      (row["Отчество"] as string) ??
+        (row["Пациент Отчество"] as string) ??
+        (row["middle_name"] as string),
     ]
       .filter(Boolean)
       .join(" ");
@@ -128,14 +135,40 @@ function getInitials(fullName?: string): string {
   return (a + (b || c) || a || "—").toUpperCase();
 }
 
+function useDebouncedValue<T>(value: T, delay = 300) {
+  const [debounced, setDebounced] = React.useState(value);
+  React.useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return debounced;
+}
+
+function isAbortError(e: unknown): boolean {
+  if (!e) return false;
+  if (typeof e === "object" && e !== null) {
+    const any = e as { name?: string; code?: unknown; message?: unknown };
+    const name = String(any.name ?? "");
+    const code = String(any.code ?? "");
+    const msg = String(any.message ?? "");
+    if (name === "AbortError") return true;
+    if (code === "ABORT_ERR" || code === "20") return true;
+    if (msg.toLowerCase().includes("aborted") || msg.toLowerCase().includes("abort")) return true;
+  } else if (typeof e === "string") {
+    const s = e.toLowerCase();
+    if (s.includes("abort")) return true;
+  }
+  return false;
+}
+
 export const PatientSearchPage: React.FC = () => {
   // Patients data
   const [loading, setLoading] = React.useState(true);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
   const [patients, setPatients] = React.useState<Patient[]>([]);
   const [query, setQuery] = React.useState("");
-  const deferredQuery = React.useDeferredValue(query);
-  const isSearching = deferredQuery.trim().length > 0;
+  const debouncedQuery = useDebouncedValue(query, 300);
+  const isSearching = debouncedQuery.trim().length > 0;
 
   // Selection and history
   const [selected, setSelected] = React.useState<Patient | null>(null);
@@ -154,16 +187,23 @@ export const PatientSearchPage: React.FC = () => {
   const [visitService, setVisitService] = React.useState("");
   const [visitPrice, setVisitPrice] = React.useState<number | "">("");
 
+  // Mobile full-screen dialogs
+  const theme = useTheme();
+  const fullScreen = useMediaQuery(theme.breakpoints.down("sm"));
+
   // Вкладки: 0 - Пациенты, 1 - История, 2 - Карточка
   const [activeTab, setActiveTab] = React.useState<number>(0);
 
   // Постраничная подгрузка пациентов (не загружаем всё сразу)
-  const [patientsSrc, setPatientsSrc] = React.useState<string | null>(null);
   const [page, setPage] = React.useState(1);
   const [total, setTotal] = React.useState(0);
 
+  // Unified AbortControllers (per поток), чтобы корректно отменять предыдущие запросы
+  const patientsCtrlRef = React.useRef<AbortController | null>(null);
+  const searchCtrlRef = React.useRef<AbortController | null>(null);
+  const historyCtrlRef = React.useRef<AbortController | null>(null);
+
   // Reload tick to re-run initial effect when user clicks "Обновить"
-  const [reloadTick, setReloadTick] = React.useState(0);
   // legacy pagination removed
 
   const handleManualRefresh = React.useCallback(() => {
@@ -173,414 +213,213 @@ export const PatientSearchPage: React.FC = () => {
       if (selected) {
         try {
           localStorage.removeItem(HISTORY_CACHE_PREFIX + selected.id);
-        } catch { void 0; }
+        } catch {
+          void 0;
+        }
       }
-    } catch { void 0; }
+    } catch {
+      void 0;
+    }
     // reset local state and re-run effect
     setSelected(null);
     setPatients([]);
     setHistory([]);
     setQuery("");
-    setPatientsSrc(null);
     setPage(1);
     setTotal(0);
-    setReloadTick((x) => x + 1);
   }, [selected]);
 
-  // Fetch patients from Supabase
+  // Fetch patients from Supabase (server pagination)
   React.useEffect(() => {
-    if (activeTab !== 0 || isSearching) {
-      // загружать пациентов только когда активна вкладка "Пациенты" и нет глобального поиска
-      return;
+    if (activeTab !== 0 || isSearching) return;
+    const prevCtrl = patientsCtrlRef.current;
+    if (prevCtrl) {
+      prevCtrl.abort();
     }
     const ctrl = new AbortController();
+    patientsCtrlRef.current = ctrl;
     (async () => {
       try {
         setLoading(true);
         setErrorMsg(null);
+        const from = (page - 1) * PER_PAGE;
+        const to = from + PER_PAGE - 1;
+        let res = await supabase
+          .from("Patients")
+          .select("*", { count: "exact" })
+          .range(from, to)
+          .abortSignal(ctrl.signal);
 
-        // Try cache first for patients to avoid refetch on revisits
-        try {
-          const raw = localStorage.getItem(PATIENTS_CACHE_KEY);
-          if (raw) {
-            const parsed = JSON.parse(raw) as PatientsCache;
-            const list = Array.isArray(parsed.patients) ? (parsed.patients as Patient[]) : [];
-            setPatients(list);
-            const prefSel =
-              (parsed.selectedId && list.find((p) => p.id === parsed.selectedId)) || (list[0] ?? null);
-            setSelected(prefSel);
-            setLoading(false);
-            return;
-          }
-        } catch {
-          // ignore cache parse errors
-          void 0;
-        }
-
-        let rows: Array<Record<string, unknown>> | null = null;
-        let lastError: unknown = null;
-        let usedSrc: string | null = null;
-        let knownSrc: string | null = patientsSrc ?? null;
-        if (!knownSrc) {
-          try {
-            const saved = localStorage.getItem(PATIENTS_SRC_KEY);
-            knownSrc = saved && saved.length > 0 ? saved : null;
-          } catch {
-            knownSrc = null;
-          }
-        }
-
-        // Prefer direct Patients-like tables, then fallback to appointments views
-        const candidates = (knownSrc ? [knownSrc] : []).concat(
-          [
-            "Patients",
-            "patients",
-            "Пациенты",
-            "profiles",
-            "Profiles",
-            "users",
-            "Users",
-            "clients",
-            "Clients",
-            "customers",
-            "Customers",
-            "patient",
-            "patients_view",
-            "patient_view",
-            "FullAppointmentsView",
-            "AppointmentsView",
-          ].filter((t) => t !== knownSrc)
-        );
-        // Параллельная быстрая детекция источника: запрашиваем по 1 записи из всех кандидатов и берём первый ответивший
-        const controllers: AbortController[] = [];
-        let chosen: string | null = null;
-
-        await Promise.all(
-          candidates.map((tableName, idx) => (async () => {
-            const c = new AbortController();
-            controllers[idx] = c;
-            try {
-              const { data, error } = await supabase
-                .schema("public")
-                .from(tableName)
-                .select("*")
-                .range(0, 0) // минимальная нагрузка — только 1 запись для детекции
-                .abortSignal(c.signal);
-              if (!error && Array.isArray(data) && data.length > 0 && !chosen) {
-                chosen = tableName;
-                // Отменяем остальные детекции, чтобы не ждать их завершения
-                controllers.forEach((ac, i) => {
-                  if (i !== idx) {
-                    try { ac.abort(); } catch { /* ignore */ }
-                  }
-                });
-              }
-            } catch {
-              /* ignore каждый промис сам по себе */
-            }
-          })()),
-        );
-
-        if (chosen) {
-          usedSrc = chosen;
-
-          // 1) Общий total (для пагинации)
-          const totalHead = await supabase
-            .schema("public")
-            .from(chosen)
-            .select("*", { count: "exact", head: true })
+        if (res.error) {
+          // Fallback: lowercased table name
+          const res2 = await supabase
+            .from("patients")
+            .select("*", { count: "exact" })
+            .range(from, to)
             .abortSignal(ctrl.signal);
-          const totalAll = (totalHead as unknown as { count?: number }).count ?? 0;
-          setTotal(totalAll);
-
-          // Сэмпл колонок источника (для безопасной работы с разными схемами)
-          const sample = await supabase
-            .schema("public")
-            .from(chosen)
-            .select("*")
-            .range(0, 0)
-            .abortSignal(ctrl.signal);
-          const sampleCols = Array.isArray(sample.data) && sample.data[0]
-            ? Object.keys(sample.data[0] as Record<string, unknown>)
-            : [];
-          const nameColsAvail = NAME_COLS.filter((c) => sampleCols.includes(c));
-
-          // Построим выражение OR только по реально доступным колонкам
-          const nameNonEmptyExpr = nameColsAvail.length > 0
-            ? nameColsAvail.map((c) => `${c.includes(" ") ? `"${c}"` : c}.neq.""`).join(",")
-            : "";
-
-          // 2) Считаем количество "named" (с непустыми ФИО; приблизительно — не NULL)
-          let namedTotal = 0;
-          if (nameNonEmptyExpr) {
-            const namedHead = await supabase
-              .schema("public")
-              .from(chosen)
-              .select("*", { count: "exact", head: true })
-              .or(nameNonEmptyExpr)
-              .abortSignal(ctrl.signal);
-            namedTotal = (namedHead as unknown as { count?: number }).count ?? 0;
-          } else {
-            // нет явных колонок имени — считаем, что все "без имени"
-            namedTotal = 0;
-          }
-
-          // Вычисляем, какую часть страницы брать из named/unnamed
-          const off = (page - 1) * PER_PAGE;
-          const limit = PER_PAGE;
-          let partA: Array<Record<string, unknown>> = []; // named
-          let partB: Array<Record<string, unknown>> = []; // unnamed
-
-          if (!nameNonEmptyExpr) {
-            // Нет доступных полей имени — обычная страничная выборка без разделения
-            const fromAny = off;
-            const toAny = off + limit - 1;
-            const resAny = await supabase
-              .schema("public")
-              .from(chosen)
-              .select("*")
-              .range(fromAny, toAny)
-              .abortSignal(ctrl.signal);
-            rows = (resAny.data ?? []) as Array<Record<string, unknown>>;
-            lastError = null;
-          } else if (off < namedTotal) {
-            const takeA = Math.min(limit, namedTotal - off);
-            const fromA = off;
-            const toA = fromA + takeA - 1;
-            const resA = await supabase
-              .schema("public")
-              .from(chosen)
-              .select("*")
-              .or(nameNonEmptyExpr)
-              .range(fromA, toA)
-              .abortSignal(ctrl.signal);
-            partA = (resA.data ?? []) as Array<Record<string, unknown>>;
-
-            const remainder = limit - partA.length;
-            if (remainder > 0) {
-              // добираем из unnamed с самого начала
-              let unnamedQ = supabase.schema("public").from(chosen).select("*").abortSignal(ctrl.signal);
-              for (const col of nameColsAvail) {
-                const colExpr = col.includes(" ") ? `"${col}"` : col;
-                unnamedQ = unnamedQ.or(`${colExpr}.is.null,${colExpr}.eq.""`);
-              }
-              const resB = await unnamedQ.range(0, remainder - 1);
-              partB = (resB.data ?? []) as Array<Record<string, unknown>>;
-            }
-          } else {
-            // Страница целиком из unnamed
-            const unnamedOff = off - namedTotal;
-            let unnamedQ = supabase.schema("public").from(chosen).select("*").abortSignal(ctrl.signal);
-            for (const col of nameColsAvail) {
-              const colExpr = col.includes(" ") ? `"${col}"` : col;
-              unnamedQ = unnamedQ.or(`${colExpr}.is.null,${colExpr}.eq.""`);
-            }
-            const resB = await unnamedQ.range(unnamedOff, unnamedOff + limit - 1);
-            partB = (resB.data ?? []) as Array<Record<string, unknown>>;
-          }
-
-          rows = [...partA, ...partB];
-          lastError = null;
-        }
-        // If nothing found yet, one more attempt in auth schema (supabase auth users)
-        if ((!rows || rows.length === 0)) {
-          try {
-            const { data: authUsers, error: authErr } = await supabase
-              .schema("auth")
-              .from("users")
-              .select("*")
-              .abortSignal(ctrl.signal);
-            if (!authErr) {
-              rows = (authUsers ?? []) as Array<Record<string, unknown>>;
-              lastError = null;
-            } else {
-              lastError = authErr;
-            }
-          } catch {
-            // ignore, will handle below
-            void 0;
-          }
+          res = res2;
         }
 
-        if (lastError && (!rows || rows.length === 0)) throw lastError;
-
-        // Build unique patients map
-        const map = new Map<string, Patient>();
-        for (const r of rows ?? []) {
-          const id = normalizePatientId(r);
-          const fio = normalizeFio(r);
-          const phone = normalizePhone(r);
-
-          // skip empty rows
-          if (!id && !fio) continue;
-
-          const key = id || `${fio}|${phone ?? ""}`;
-          const prev = map.get(key);
-          if (!prev) {
-            map.set(key, { id: id || key, fio, phone });
-          } else {
-            // backfill phone if missing
-            if (!prev.phone && phone) prev.phone = phone;
-          }
+        if (res.error) throw res.error;
+        {
+          const respCount = (res as unknown as { count?: number }).count;
+          const dataLen = Array.isArray(res.data) ? res.data.length : 0;
+          setTotal(typeof respCount === "number" ? respCount : dataLen);
         }
 
-        const list = Array.from(map.values()).sort((a, b) => {
-          const aEmpty = !a.fio || a.fio.trim() === "";
-          const bEmpty = !b.fio || b.fio.trim() === "";
-          if (aEmpty && !bEmpty) return 1; // пустые в конец
-          if (!aEmpty && bEmpty) return -1;
-          return a.fio.localeCompare(b.fio, "ru");
-        });
+        const data = (res.data ?? []) as Array<Record<string, unknown>>;
+        const mapped: Patient[] = data
+          .map((r) => ({
+            id: normalizePatientId(r),
+            fio:
+              (r["full_name"] as string) ??
+              (r["ФИО пациента"] as string) ??
+              normalizeFio(r),
+            phone:
+              (r["phone"] as string) ??
+              (r["Телефон"] as string) ??
+              normalizePhone(r),
+          }))
+          .filter((p) => p.id || p.fio);
+
         if (ctrl.signal.aborted) return;
-        setPatients(list);
-        if (usedSrc) {
-          setPatientsSrc(usedSrc);
-          try { localStorage.setItem(PATIENTS_SRC_KEY, usedSrc); } catch { /* ignore */ }
-        }
-
-        // Preselect the first patient if any
-        if (!selected && list.length > 0) {
-          setSelected(list[0]);
-        }
-        // Save to browser cache so subsequent visits are instant
-        try {
-          const finalSelectedId = (selected?.id) ?? (list[0]?.id ?? null);
-          const payload: PatientsCache = { ts: Date.now(), patients: list, selectedId: finalSelectedId };
-          localStorage.setItem(PATIENTS_CACHE_KEY, JSON.stringify(payload));
-        } catch { void 0; }
+        setPatients(mapped);
+        if (!selected && mapped.length > 0) setSelected(mapped[0]);
       } catch (e: unknown) {
+        if (isAbortError(e)) {
+          return;
+        }
         console.error(e);
-        const errObj = (typeof e === "object" && e !== null ? e : {}) as {
-          message?: string;
-          error_description?: string;
-          hint?: string;
-          details?: string;
-          code?: string;
-        };
-        const msg =
-          errObj.message ??
-          errObj.error_description ??
-          errObj.hint ??
-          errObj.details ??
-          (typeof e === "object" ? JSON.stringify(e) : String(e));
-        setErrorMsg(msg);
+        const errObj = (typeof e === "object" && e !== null ? e : {}) as { message?: string };
+        setErrorMsg(errObj.message ?? (typeof e === "object" ? JSON.stringify(e) : String(e)));
       } finally {
         setLoading(false);
       }
     })();
-  return () => { ctrl.abort(); };
-  }, [reloadTick, activeTab, page, patientsSrc, isSearching]);
+    return () => {
+      if (patientsCtrlRef.current === ctrl) {
+        patientsCtrlRef.current.abort();
+      }
+    };
+  }, [activeTab, page, isSearching]);
 
   // Сбрасываем страницу при изменении поискового запроса
   React.useEffect(() => {
     setPage(1);
-  }, [deferredQuery]);
+  }, [debouncedQuery]);
 
-  // Глобальный поиск по БД c пагинацией
+  // Глобальный поиск по БД c серверной пагинацией
   React.useEffect(() => {
     if (activeTab !== 0) return;
-    const q = deferredQuery.trim();
+    const q = debouncedQuery.trim();
     if (!q) return;
 
+    const prevCtrl = searchCtrlRef.current;
+    if (prevCtrl) {
+      prevCtrl.abort();
+    }
     const ctrl = new AbortController();
+    searchCtrlRef.current = ctrl;
     (async () => {
       try {
         setLoading(true);
         setErrorMsg(null);
 
-        // Берём известный источник или из localStorage
-        let src: string | null = patientsSrc ?? null;
-        if (!src) {
-          try { src = localStorage.getItem(PATIENTS_SRC_KEY) || null; } catch { src = null; }
-        }
-        if (!src) {
-          // fallback — попробуем "Patients"
-          src = "Patients";
-        }
-
-        // Паттерн для ilike
         const patt = `%${q}%`;
-
-        // Вычисляем доступные колонки на основании сэмпла
-        const sample = await supabase
-          .schema("public")
-          .from(src)
-          .select("*")
-          .range(0, 0)
-          .abortSignal(ctrl.signal);
-        const sampleCols = Array.isArray(sample.data) && sample.data[0]
-          ? Object.keys(sample.data[0] as Record<string, unknown>)
-          : [];
-        const usable = [...NAME_COLS, ...PHONE_COLS].filter((c) => sampleCols.includes(c));
-        if (usable.length === 0) {
-          setTotal(0);
-          setPatients([]);
-          setLoading(false);
-          return;
-        }
-        const orExpr = usable
-          .map((c) => `${c.includes(" ") ? `"${c}"` : c}.ilike.${patt}`)
-          .join(",");
-
         const from = (page - 1) * PER_PAGE;
         const to = from + PER_PAGE - 1;
 
-        const res = await supabase
-          .schema("public")
-          .from(src)
+        let res = await supabase
+          .from("Patients")
           .select("*", { count: "exact" })
-          .or(orExpr)
+          .or(`"ФИО пациента".ilike.${patt},Телефон.ilike.${patt}`)
           .range(from, to)
           .abortSignal(ctrl.signal);
 
-        if (res.error) throw res.error;
-
-        setTotal((res as unknown as { count?: number }).count ?? 0);
-
-        // Нормализация и сортировка (без имени в конец видимой выдачи)
-        const data = (res.data ?? []) as Array<Record<string, unknown>>;
-        let mapped: Patient[] = [];
-        const map = new Map<string, Patient>();
-        for (const r of data) {
-          const id = normalizePatientId(r);
-          const fio = normalizeFio(r);
-          const phone = normalizePhone(r);
-          if (!id && !fio) continue;
-          const key = id || `${fio}|${phone ?? ""}`;
-          if (!map.has(key)) map.set(key, { id: id || key, fio, phone });
+        if (res.error) {
+          // Fallback: lowercased table name
+          const res2 = await supabase
+            .from("patients")
+            .select("*", { count: "exact" })
+            .or(`"ФИО пациента".ilike.${patt},Телефон.ilike.${patt}`)
+            .range(from, to)
+            .abortSignal(ctrl.signal);
+          res = res2;
         }
-        mapped = Array.from(map.values()).sort((a, b) => {
-          const aEmpty = !a.fio || a.fio.trim() === "";
-          const bEmpty = !b.fio || b.fio.trim() === "";
-          if (aEmpty && !bEmpty) return 1;
-          if (!aEmpty && bEmpty) return -1;
-          return a.fio.localeCompare(b.fio, "ru");
-        });
+        // Last-resort fallback: two-step union if .or with spaced columns fails silently
+        if (!res.error && Array.isArray(res.data) && res.data.length === 0) {
+          try {
+            const [fioRes, phoneRes] = await Promise.all([
+              supabase.from("Patients").select("*", { count: "exact" }).ilike("ФИО пациента", patt).range(from, to).abortSignal(ctrl.signal),
+              supabase.from("Patients").select("*", { count: "exact" }).ilike("Телефон", patt).range(from, to).abortSignal(ctrl.signal),
+            ]);
+            if (!fioRes.error || !phoneRes.error) {
+              const fioData = Array.isArray(fioRes.data) ? fioRes.data : [];
+              const phoneData = Array.isArray(phoneRes.data) ? phoneRes.data : [];
+              const merged = [...fioData, ...phoneData];
+              // mimic shape of res
+              res = {
+                data: merged,
+                error: null,
+                count: (fioRes as unknown as { count?: number }).count ?? (phoneRes as unknown as { count?: number }).count ?? merged.length,
+              } as unknown as typeof res;
+            }
+          } catch {
+            // ignore, keep previous res
+          }
+        }
 
+        if (res.error) throw res.error;
+        {
+          const respCount = (res as unknown as { count?: number }).count;
+          const dataLen = Array.isArray(res.data) ? res.data.length : 0;
+          setTotal(typeof respCount === "number" ? respCount : dataLen);
+        }
+
+        const data = (res.data ?? []) as Array<Record<string, unknown>>;
+        const mapped: Patient[] = data
+          .map((r) => ({
+            id: normalizePatientId(r),
+            fio:
+              (r["full_name"] as string) ??
+              (r["ФИО пациента"] as string) ??
+              normalizeFio(r),
+            phone:
+              (r["phone"] as string) ??
+              (r["Телефон"] as string) ??
+              normalizePhone(r),
+          }))
+          .filter((p) => p.id || p.fio);
+
+        if (ctrl.signal.aborted) return;
         setPatients(mapped);
-        // preselect
         if (!selected && mapped.length > 0) setSelected(mapped[0]);
-
       } catch (e: unknown) {
+        if (isAbortError(e)) {
+          return;
+        }
         console.error(e);
-        const errObj = (typeof e === "object" && e !== null ? e : {}) as { message?: string; error_description?: string; hint?: string; details?: string; code?: string; };
-        const msg =
-          errObj.message ??
-          errObj.error_description ??
-          errObj.hint ??
-          errObj.details ??
-          (typeof e === "object" ? JSON.stringify(e) : String(e));
-        setErrorMsg(msg);
+        const errObj = (typeof e === "object" && e !== null ? e : {}) as { message?: string };
+        setErrorMsg(errObj.message ?? (typeof e === "object" ? JSON.stringify(e) : String(e)));
       } finally {
         setLoading(false);
       }
     })();
-    return () => { ctrl.abort(); };
-  }, [activeTab, deferredQuery, page, patientsSrc]);
+    return () => {
+      if (searchCtrlRef.current === ctrl) {
+        searchCtrlRef.current.abort();
+      }
+    };
+  }, [activeTab, debouncedQuery, page]);
 
   // Fetch history when selected patient changes
   React.useEffect(() => {
+    const prevCtrl = historyCtrlRef.current;
+    if (prevCtrl) {
+      prevCtrl.abort();
+    }
     const ctrl = new AbortController();
+    historyCtrlRef.current = ctrl;
     (async () => {
       try {
         if (!selected || !(activeTab === 1 || activeTab === 2)) return;
@@ -596,13 +435,19 @@ export const PatientSearchPage: React.FC = () => {
             setHistoryLoading(false);
             return;
           }
-        } catch { void 0; }
+        } catch {
+          void 0;
+        }
 
         let rows: Array<Record<string, unknown>> | null = null;
         let lastError: unknown = null;
 
         // Try to query by patient id from the views/tables; fallback to client filter
-        for (const tableName of ["FullAppointmentsView", "AppointmentsView", "Appointments"]) {
+        for (const tableName of [
+          "FullAppointmentsView",
+          "AppointmentsView",
+          "Appointments",
+        ]) {
           // Prefer server-side filter if column exists; we can't introspect, so try ID first then FIO
           let data: Array<Record<string, unknown>> | null = null;
           let error: unknown = null;
@@ -634,11 +479,14 @@ export const PatientSearchPage: React.FC = () => {
                 .select("*")
                 .abortSignal(ctrl.signal);
               if (!resAll.error) {
-                const all = (resAll.data ?? []) as Array<Record<string, unknown>>;
+                const all = (resAll.data ?? []) as Array<
+                  Record<string, unknown>
+                >;
                 data = all.filter(
                   (r) =>
                     normalizePatientId(r) === selected.id ||
-                    normalizeFio(r).toLowerCase().trim() === selected.fio.toLowerCase().trim()
+                    normalizeFio(r).toLowerCase().trim() ===
+                      selected.fio.toLowerCase().trim()
                 );
               } else {
                 error = resAll.error;
@@ -669,15 +517,25 @@ export const PatientSearchPage: React.FC = () => {
             ),
             "Дата и время": String(r["Дата и время"] ?? ""),
             "Дата n8n": (r["Дата n8n"] as string) ?? undefined,
-            "Доктор ФИО": (r["Доктор ФИО"] as string) ?? (r["Доктор"] as string) ?? undefined,
+            "Доктор ФИО":
+              (r["Доктор ФИО"] as string) ??
+              (r["Доктор"] as string) ??
+              undefined,
             "Пациент ФИО": normalizeFio(r) || undefined,
-            "Услуга": (r["Название услуги"] as string) ?? (r["Услуга"] as string) ?? undefined,
+            Услуга:
+              (r["Название услуги"] as string) ??
+              (r["Услуга"] as string) ??
+              undefined,
             "Услуга ID": (r["Услуга ID"] as string) ?? undefined,
             Статус: (r["Статус"] as string) ?? undefined,
-            Стоимость: r["Стоимость"] != null ? Number(r["Стоимость"]) : undefined,
-            "Итого, сом": r["Итого, сом"] != null ? Number(r["Итого, сом"]) : undefined,
-            "Жалобы при обращении": (r["Жалобы при обращении"] as string) ?? undefined,
-            "Комментарий администратора": (r["Комментарий администратора"] as string) ?? undefined,
+            Стоимость:
+              r["Стоимость"] != null ? Number(r["Стоимость"]) : undefined,
+            "Итого, сом":
+              r["Итого, сом"] != null ? Number(r["Итого, сом"]) : undefined,
+            "Жалобы при обращении":
+              (r["Жалобы при обращении"] as string) ?? undefined,
+            "Комментарий администратора":
+              (r["Комментарий администратора"] as string) ?? undefined,
           }))
           .filter((r) => r["Дата и время"]) // valid rows
           .sort((a, b) => {
@@ -691,9 +549,17 @@ export const PatientSearchPage: React.FC = () => {
         // Save to cache for subsequent visits to this patient
         try {
           const payload: HistoryCache = { ts: Date.now(), items: hist };
-          localStorage.setItem(HISTORY_CACHE_PREFIX + selected.id, JSON.stringify(payload));
-        } catch { void 0; }
+          localStorage.setItem(
+            HISTORY_CACHE_PREFIX + selected.id,
+            JSON.stringify(payload)
+          );
+        } catch {
+          void 0;
+        }
       } catch (e: unknown) {
+        if (isAbortError(e)) {
+          return;
+        }
         console.error(e);
         const errObj = (typeof e === "object" && e !== null ? e : {}) as {
           message?: string;
@@ -713,19 +579,17 @@ export const PatientSearchPage: React.FC = () => {
         setHistoryLoading(false);
       }
     })();
-  return () => { ctrl.abort(); };
+    return () => {
+      if (historyCtrlRef.current === ctrl) {
+        historyCtrlRef.current.abort();
+      }
+    };
   }, [selected, activeTab]);
 
   const filteredPatients = React.useMemo(() => {
-    const q = deferredQuery.trim().toLowerCase();
-    if (!q) return patients;
-    return patients.filter(
-      (p) =>
-        p.fio.toLowerCase().includes(q) ||
-        (p.phone ? p.phone.toLowerCase().includes(q) : false) ||
-        p.id.toLowerCase().includes(q)
-    );
-  }, [patients, deferredQuery]);
+    // Серверный поиск — клиентская фильтрация не требуется
+    return patients;
+  }, [patients, debouncedQuery]);
 
   // Visible patients: show all loaded (server-paged via "Загрузить ещё")
   const visiblePatients = filteredPatients;
@@ -742,10 +606,14 @@ export const PatientSearchPage: React.FC = () => {
 
       // Try variations of column names
       const attempts: Array<Record<string, unknown>> = [
-        { "ФИО": fio, "Телефон": phone },
-        { "Пациент ФИО": fio, "Телефон": phone },
-        { "Имя": fio.split(" ")[1] ?? fio, "Фамилия": fio.split(" ")[0] ?? "", "Телефон": phone },
-        { "name": fio, "phone": phone },
+        { ФИО: fio, Телефон: phone },
+        { "Пациент ФИО": fio, Телефон: phone },
+        {
+          Имя: fio.split(" ")[1] ?? fio,
+          Фамилия: fio.split(" ")[0] ?? "",
+          Телефон: phone,
+        },
+        { name: fio, phone: phone },
       ];
 
       for (const tableName of ["Patients", "patients"]) {
@@ -785,8 +653,16 @@ export const PatientSearchPage: React.FC = () => {
 
           let rows: Array<Record<string, unknown>> | null = null;
           let lastError: unknown = null;
-          for (const tableName of ["Patients", "patients", "FullAppointmentsView", "AppointmentsView"]) {
-            const { data, error } = await supabase.schema("public").from(tableName).select("*");
+          for (const tableName of [
+            "Patients",
+            "patients",
+            "FullAppointmentsView",
+            "AppointmentsView",
+          ]) {
+            const { data, error } = await supabase
+              .schema("public")
+              .from(tableName)
+              .select("*");
             if (!error) {
               rows = (data ?? []) as Array<Record<string, unknown>>;
               lastError = null;
@@ -803,7 +679,8 @@ export const PatientSearchPage: React.FC = () => {
             const ph = normalizePhone(r);
             if (!id && !f && !ph) continue;
             const key = id || `${f}|${ph ?? ""}`;
-            if (!map.has(key)) map.set(key, { id: id || key, fio: f, phone: ph });
+            if (!map.has(key))
+              map.set(key, { id: id || key, fio: f, phone: ph });
           }
           const list = Array.from(map.values()).sort((a, b) => {
             const aEmpty = !a.fio || a.fio.trim() === "";
@@ -814,7 +691,9 @@ export const PatientSearchPage: React.FC = () => {
           });
           setPatients(list);
           const sel =
-            insertedId && list.find((p) => p.id === insertedId) ? list.find((p) => p.id === insertedId)! : list[0] ?? null;
+            insertedId && list.find((p) => p.id === insertedId)
+              ? list.find((p) => p.id === insertedId)!
+              : list[0] ?? null;
           setSelected(sel);
         } catch (e) {
           console.error(e);
@@ -846,18 +725,18 @@ export const PatientSearchPage: React.FC = () => {
         {
           "Пациент ID": selected.id,
           "Дата и время": visitDateTime.replace("T", " "),
-          "Статус": "Ожидаем",
+          Статус: "Ожидаем",
           "Доктор ФИО": visitDoctor || null,
           "Услуга ID": visitService || null,
-          "Стоимость": visitPrice ? Number(visitPrice) : null,
+          Стоимость: visitPrice ? Number(visitPrice) : null,
         },
         {
           "Пациент ID": selected.id,
-          "Дата": visitDateTime.split("T")[0],
-          "Статус": "Ожидаем",
-          "Доктор": visitDoctor || null,
-          "Услуга": visitService || null,
-          "Стоимость": visitPrice ? Number(visitPrice) : null,
+          Дата: visitDateTime.split("T")[0],
+          Статус: "Ожидаем",
+          Доктор: visitDoctor || null,
+          Услуга: visitService || null,
+          Стоимость: visitPrice ? Number(visitPrice) : null,
         },
       ];
 
@@ -887,7 +766,11 @@ export const PatientSearchPage: React.FC = () => {
       setVisitPrice("");
 
       // invalidate cached history for this patient
-      try { localStorage.removeItem(HISTORY_CACHE_PREFIX + selected.id); } catch { void 0; }
+      try {
+        localStorage.removeItem(HISTORY_CACHE_PREFIX + selected.id);
+      } catch {
+        void 0;
+      }
       // refresh history quickly
       setHistory([]);
       setHistoryLoading(true);
@@ -911,14 +794,22 @@ export const PatientSearchPage: React.FC = () => {
 
   return (
     <Box>
-      <SubHeader
+      <SubHeader 
         title="Поиск пациента"
         actions={
-          <Stack direction="row" gap={1}>
-            <Button variant="contained" startIcon={<PersonAddAltOutlined />} onClick={() => setAddOpen(true)}>
+          <Stack direction="row" gap={1} sx={{flexWrap: 'wrap'}}>
+            <Button
+              variant="contained"
+              startIcon={<PersonAddAltOutlined />}
+              onClick={() => setAddOpen(true)}
+            >
               Добавить пациента
             </Button>
-            <Button variant="outlined" startIcon={<RefreshOutlined />} onClick={handleManualRefresh}>
+            <Button
+              variant="outlined"
+              startIcon={<RefreshOutlined />}
+              onClick={handleManualRefresh}
+            >
               Обновить
             </Button>
             <Button
@@ -933,9 +824,14 @@ export const PatientSearchPage: React.FC = () => {
         }
       />
 
-      <Box sx={{ px: 2, py: 2 }}>
+      <Box sx={{ px: 2, py: 2  }}>
         <Breadcrumbs sx={{ mb: 2 }}>
-          <Link component={RouterLink} to="/home" underline="hover" color="inherit">
+          <Link
+            component={RouterLink}
+            to="/home"
+            underline="hover"
+            color="inherit"
+          >
             Главная
           </Link>
           <Typography color="text.primary">Поиск пациента</Typography>
@@ -958,24 +854,33 @@ export const PatientSearchPage: React.FC = () => {
           <Grid item xs={12} md={4}>
             <Card variant="outlined">
               <CardHeader
+                sx={{ flexWrap: "wrap", gap: 2 }}
                 title={
                   <Stack direction="row" alignItems="center" gap={1}>
                     <Typography variant="subtitle1">Пациенты</Typography>
-                    <Chip size="small" label={patients.length} />
+                    <Chip size="small" label={total} />
                   </Stack>
                 }
                 action={
-                  <Stack direction="row" gap={1} alignItems="center" sx={{ width: { xs: 1, md: "auto" } }}>
+                  <Stack
+                    direction="row"
+                    gap={1}
+                    alignItems="center"
+                    sx={{ width: { xs: 1, md: "auto" } }}
+                  >
                     <TextField
                       size="small"
                       placeholder="Поиск ФИО/телефон"
-                      InputProps={{ startAdornment: (
-                        <InputAdornment position="start">
-                          <SearchOutlined fontSize="small" />
-                        </InputAdornment>
-                      ) }}
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <SearchOutlined fontSize="small" />
+                          </InputAdornment>
+                        ),
+                      }}
                       value={query}
                       onChange={(e) => setQuery(e.target.value)}
+                      sx={{ width: { xs: 1, md: 260 } }}
                     />
                   </Stack>
                 }
@@ -996,61 +901,96 @@ export const PatientSearchPage: React.FC = () => {
                   </Typography>
                 ) : (
                   <>
-                  <List disablePadding>
-                    {visiblePatients.map((p) => {
-                      const active = selected?.id === p.id || selected?.fio === p.fio;
-                      return (
-                        <React.Fragment key={`${p.id}-${p.fio}`}>
-                          <ListItemButton
-                            selected={active}
-                            onClick={() => setSelected(p)}
-                            sx={{
-                              px: 2,
-                              py: 1.25,
-                              my: "5px", // 10px между элементами (5px сверху и снизу)
-                              border: "1px solid transparent",
-                              borderRadius: 1,
-                              "&.Mui-selected": {
-                                borderColor: (theme) => theme.palette.primary.main,
-                                bgcolor: (theme) => theme.palette.action.selected,
-                              },
-                            }}
-                          >
-                            <Stack direction="row" alignItems="center" spacing={1.25} sx={{ width: 1 }}>
-                              <Avatar sx={{ width: 28, height: 28, bgcolor: (theme) => theme.palette.primary.main, fontSize: 12 }}>
-                                {getInitials(p.fio)}
-                              </Avatar>
-                              <ListItemText
-                                primary={
-                                  <Typography variant="subtitle2" noWrap>
-                                    {p.fio || "Без имени"}
-                                  </Typography>
-                                }
-                                secondary={
-                                  <Stack direction="row" alignItems="center" gap={0.75}>
-                                    <LocalPhoneOutlined fontSize="inherit" />
-                                    <Typography variant="caption" color="text.secondary" noWrap>
-                                      {p.phone || "—"}
+                    <List disablePadding>
+                      {visiblePatients.map((p) => {
+                        const active =
+                          selected?.id === p.id || selected?.fio === p.fio;
+                        return (
+                          <React.Fragment key={`${p.id}-${p.fio}`}>
+                            <ListItemButton
+                              selected={active}
+                              onClick={() => setSelected(p)}
+                              sx={{
+                                px: 2,
+                                py: 1.25,
+                                my: "5px", // 10px между элементами (5px сверху и снизу)
+                                border: "1px solid transparent",
+                                borderRadius: 1,
+                                "&.Mui-selected": {
+                                  borderColor: (theme) =>
+                                    theme.palette.primary.main,
+                                  bgcolor: (theme) =>
+                                    theme.palette.action.selected,
+                                },
+                              }}
+                            >
+                              <Stack
+                                direction="row"
+                                alignItems="center"
+                                spacing={1.25}
+                                sx={{ width: 1 }}
+                              >
+                                <Avatar
+                                  sx={{
+                                    width: 28,
+                                    height: 28,
+                                    bgcolor: (theme) =>
+                                      theme.palette.primary.main,
+                                    fontSize: 12,
+                                  }}
+                                >
+                                  {getInitials(p.fio)}
+                                </Avatar>
+                                <ListItemText
+                                  primary={
+                                    <Typography variant="subtitle2" noWrap>
+                                      {p.fio || "Без имени"}
                                     </Typography>
-                                  </Stack>
-                                }
-                              />
-                            </Stack>
-                          </ListItemButton>
-                        </React.Fragment>
-                      );
-                    })}
-                  </List>
-                  <Box sx={{ px: 2, py: 1.25, display: "flex", justifyContent: "center" }}>
-                    <Pagination
-                      count={Math.max(1, Math.ceil(total / PER_PAGE))}
-                      page={page}
-                      onChange={(_e, val) => setPage(val)}
-                      size="small"
-                      showFirstButton
-                      showLastButton
-                    />
-                  </Box>
+                                  }
+                                  secondary={
+                                    <Stack
+                                      direction="row"
+                                      alignItems="center"
+                                      gap={0.75}
+                                    >
+                                      <LocalPhoneOutlined fontSize="inherit" />
+                                      <Typography
+                                        variant="caption"
+                                        color="text.secondary"
+                                        noWrap
+                                      >
+                                        {p.phone || "—"}
+                                      </Typography>
+                                    </Stack>
+                                  }
+                                />
+                              </Stack>
+                            </ListItemButton>
+                          </React.Fragment>
+                        );
+                      })}
+                    </List>
+                    <Box
+                      sx={{
+                        px: 2,
+                        py: 1.25,
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <Typography variant="caption" color="text.secondary">
+                        Page {page} of {Math.max(1, Math.ceil(total / PER_PAGE))}
+                      </Typography>
+                      <Pagination
+                        count={Math.max(1, Math.ceil(total / PER_PAGE))}
+                        page={page}
+                        onChange={(_e, val) => setPage(val)}
+                        size="small"
+                        showFirstButton
+                        showLastButton
+                      />
+                    </Box>
                   </>
                 )}
               </CardContent>
@@ -1098,25 +1038,44 @@ export const PatientSearchPage: React.FC = () => {
                           py: 1.25,
                           textDecoration: "none",
                           color: "inherit",
-                          "&:hover": { bgcolor: (theme) => theme.palette.action.hover },
+                          "&:hover": {
+                            bgcolor: (theme) => theme.palette.action.hover,
+                          },
                         }}
                       >
-                        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={2}>
+                        <Stack
+                          direction="row"
+                          justifyContent="space-between"
+                          alignItems="flex-start"
+                          gap={2}
+                        >
                           <Stack>
-                            <Typography variant="subtitle2">{h["Дата и время"]}</Typography>
+                            <Typography variant="subtitle2">
+                              {h["Дата и время"]}
+                            </Typography>
                             <Typography variant="body2" color="text.secondary">
                               Доктор: {h["Доктор ФИО"] || "—"}
                             </Typography>
                             {h["Услуга"] && (
-                              <Typography variant="body2" color="text.secondary">
+                              <Typography
+                                variant="body2"
+                                color="text.secondary"
+                              >
                                 Услуга: {h["Услуга"]}
                               </Typography>
                             )}
                           </Stack>
                           <Stack alignItems="flex-end">
-                            {typeof h["Итого, сом"] !== "undefined" || typeof h["Стоимость"] !== "undefined" ? (
-                              <Typography variant="body2" color="text.secondary">
-                                Сумма: {formatKGS(h["Итого, сом"] ?? h["Стоимость"] ?? 0)}
+                            {typeof h["Итого, сом"] !== "undefined" ||
+                            typeof h["Стоимость"] !== "undefined" ? (
+                              <Typography
+                                variant="body2"
+                                color="text.secondary"
+                              >
+                                Сумма:{" "}
+                                {formatKGS(
+                                  h["Итого, сом"] ?? h["Стоимость"] ?? 0
+                                )}
                               </Typography>
                             ) : null}
                             {h.Статус && (
@@ -1130,7 +1089,11 @@ export const PatientSearchPage: React.FC = () => {
                                     ? "warning"
                                     : "default"
                                 }
-                                variant={h.Статус === "Со скидкой" ? "outlined" : "filled"}
+                                variant={
+                                  h.Статус === "Со скидкой"
+                                    ? "outlined"
+                                    : "filled"
+                                }
                               />
                             )}
                           </Stack>
@@ -1168,7 +1131,9 @@ export const PatientSearchPage: React.FC = () => {
                     <Typography variant="subtitle1">{selected.fio}</Typography>
                     <Stack direction="row" alignItems="center" gap={1}>
                       <LocalPhoneOutlined />
-                      <Typography variant="body2">{selected.phone || "—"}</Typography>
+                      <Typography variant="body2">
+                        {selected.phone || "—"}
+                      </Typography>
                     </Stack>
                     <Divider sx={{ borderColor: "rgba(255,255,255,0.35)" }} />
                     <Stack direction="row" alignItems="center" gap={1}>
@@ -1179,7 +1144,9 @@ export const PatientSearchPage: React.FC = () => {
                     </Stack>
                     <Stack direction="row" alignItems="center" gap={1}>
                       <MedicalServicesOutlined />
-                      <Typography variant="body2">Последняя услуга: {history[0]?.["Услуга"] || "—"}</Typography>
+                      <Typography variant="body2">
+                        Последняя услуга: {history[0]?.["Услуга"] || "—"}
+                      </Typography>
                     </Stack>
                     <Stack direction="row" alignItems="center" gap={1}>
                       <NotesOutlined />
@@ -1200,7 +1167,13 @@ export const PatientSearchPage: React.FC = () => {
       </Box>
 
       {/* Dialog: Add Patient */}
-      <Dialog open={addOpen} onClose={() => setAddOpen(false)} fullWidth maxWidth="sm">
+      <Dialog
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        fullWidth
+        maxWidth="sm"
+        fullScreen={fullScreen}
+      >
         <DialogTitle>Добавить пациента</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
@@ -1228,7 +1201,13 @@ export const PatientSearchPage: React.FC = () => {
       </Dialog>
 
       {/* Dialog: Create Appointment */}
-      <Dialog open={visitOpen} onClose={() => setVisitOpen(false)} fullWidth maxWidth="sm">
+      <Dialog
+        open={visitOpen}
+        onClose={() => setVisitOpen(false)}
+        fullWidth
+        maxWidth="sm"
+        fullScreen={fullScreen}
+      >
         <DialogTitle>Создать прием</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
@@ -1256,14 +1235,22 @@ export const PatientSearchPage: React.FC = () => {
               label="Стоимость"
               type="number"
               value={visitPrice}
-              onChange={(e) => setVisitPrice(e.target.value === "" ? "" : Number(e.target.value))}
+              onChange={(e) =>
+                setVisitPrice(
+                  e.target.value === "" ? "" : Number(e.target.value)
+                )
+              }
               fullWidth
             />
           </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setVisitOpen(false)}>Отмена</Button>
-          <Button onClick={handleCreateVisit} variant="contained" disabled={!selected}>
+          <Button
+            onClick={handleCreateVisit}
+            variant="contained"
+            disabled={!selected}
+          >
             Создать
           </Button>
         </DialogActions>
