@@ -66,9 +66,9 @@ export const AppointmentsList: React.FC<AppointmentsListProps> = ({
           <Stack divider={<Divider flexItem />}>
             {items.map((a) => (
               <Box
-                key={a.ID}
+                key={a['Прием ID']}
                 component={RouterLink}
-                to={`/home/appointments/${a.ID}`}
+                to={`/home/appointments/${a['Прием ID']}`}
                 sx={{
                   px: 2,
                   py: 1.25,

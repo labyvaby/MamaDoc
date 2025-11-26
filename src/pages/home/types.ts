@@ -1,5 +1,5 @@
 export type Appointment = {
-  ID: string;
+  'Прием ID': string;
   "Дата и время": string;
   "Дата n8n": string;
   "Доктор ФИО": string;

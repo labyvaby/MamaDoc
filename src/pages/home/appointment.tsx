@@ -66,7 +66,7 @@ export const AppointmentDetailsPage: React.FC = () => {
             .schema("public")
             .from(tableName)
             .select("*")
-            .eq("ID", id)
+            .eq("Прием ID", id)
             .maybeSingle();
 
           if (!byId.error && byId.data) {
@@ -116,7 +116,7 @@ export const AppointmentDetailsPage: React.FC = () => {
                 .schema("public")
                 .from(tableName)
                 .select("*")
-                .or(`ID.eq.${sid},id.eq.${sid}`)
+                .eq(`Прием ID`, sid)
                 .maybeSingle();
               if (!svc.error && svc.data) {
                 const s = svc.data as Record<string, unknown>;
