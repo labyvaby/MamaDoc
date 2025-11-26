@@ -36,6 +36,7 @@ type Appointment = {
   "Доктор ФИО": string;
   "Пациент ФИО": string;
   "Услуга ID": string;
+  "Услуга"?: string;
   "Заключение ID": string;
   Статус: string;
   Ночь: boolean | string;
@@ -60,6 +61,7 @@ export const AppointmentDetailsPage: React.FC = () => {
         let lastError: unknown = null;
         for (const tableName of ["FullAppointmentsView", "AppointmentsView", "Appointments"]) {
           // 1) Пытаемся отфильтровать по колонке "ID"
+          // Запрос к Supabase: получить запись приема по ID из указанной таблицы/представления
           const byId = await supabase
             .schema("public")
             .from(tableName)
@@ -74,6 +76,8 @@ export const AppointmentDetailsPage: React.FC = () => {
           }
 
           // 2) Если колонки "ID" нет (42703) или запись не найдена — грузим все и фильтруем по альтернативным ключам
+          // Запрос к Supabase: получить все записи и искать нужную по альтернативным ключам
+          // (если колонки "ID" нет или запись не найдена прямым сравнением)
           const allRes = await supabase
             .schema("public")
             .from(tableName)
@@ -103,6 +107,33 @@ export const AppointmentDetailsPage: React.FC = () => {
           const d = record as Record<string, unknown>;
           const get = (k: string) => d[k] as unknown;
 
+          const sid = String((get("Услуга ID") as string) ?? "");
+          let svcName = String(((get("Название услуги") as string) ?? (get("Услуга") as string) ?? "") || "");
+          if (!svcName && sid) {
+            for (const tableName of ["Services", "services", "Услуги"]) {
+              // Запрос к Supabase: получить название услуги по её ID из таблиц/представлений услуг
+              const svc = await supabase
+                .schema("public")
+                .from(tableName)
+                .select("*")
+                .or(`ID.eq.${sid},id.eq.${sid}`)
+                .maybeSingle();
+              if (!svc.error && svc.data) {
+                const s = svc.data as Record<string, unknown>;
+                svcName = String(
+                  s["Название услуги"] ??
+                    s["Название"] ??
+                    s["Наименование"] ??
+                    s["name"] ??
+                    s["title"] ??
+                    s["service_name"] ??
+                    ""
+                );
+                if (svcName) break;
+              }
+            }
+          }
+
           const mapped: Appointment = {
             ID: String(
               (d["ID"] ??
@@ -124,7 +155,8 @@ export const AppointmentDetailsPage: React.FC = () => {
               ((d["Пациент ФИО"] as string) ??
                 (d["Пациент"] as string) ??
                 [d["Пациент Фамилия"], d["Пациент Имя"]].filter(Boolean).join(" ")) || "",
-            "Услуга ID": (get("Услуга ID") as string) ?? "",
+            "Услуга ID": sid,
+            "Услуга": svcName,
             "Заключение ID": (get("Заключение ID") as string) ?? "",
             Статус: (get("Статус") as string) ?? "",
             Ночь: (get("Ночь") as boolean | string | null) ?? false,
@@ -255,7 +287,7 @@ export const AppointmentDetailsPage: React.FC = () => {
                             Услуга
                           </Typography>
                         </Stack>
-                        <Typography variant="subtitle2">{item["Услуга ID"] || "—"}</Typography>
+                        <Typography variant="subtitle2">{item["Услуга"] || "—"}</Typography>
                       </Grid>
 
                       <Grid item xs={12} sm={6}>

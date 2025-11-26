@@ -244,6 +244,7 @@ export const PatientSearchPage: React.FC = () => {
         setErrorMsg(null);
         const from = (page - 1) * PER_PAGE;
         const to = from + PER_PAGE - 1;
+        // Запрос к Supabase: постраничная загрузка пациентов (40 на страницу) из таблицы "Patients"
         let res = await supabase
           .from("Patients")
           .select("*", { count: "exact" })
@@ -329,6 +330,7 @@ export const PatientSearchPage: React.FC = () => {
         const from = (page - 1) * PER_PAGE;
         const to = from + PER_PAGE - 1;
 
+        // Запрос к Supabase: глобальный поиск пациентов по ФИО/Телефону (по всей БД, не только текущая страница)
         let res = await supabase
           .from("Patients")
           .select("*", { count: "exact" })
@@ -453,6 +455,7 @@ export const PatientSearchPage: React.FC = () => {
           let error: unknown = null;
 
           // Attempt by "Пациент ID"
+          // Запрос к Supabase: получить историю приемов по ID пациента из представлений/таблиц (FullAppointmentsView / AppointmentsView / Appointments)
           const resById = await supabase
             .schema("public")
             .from(tableName)

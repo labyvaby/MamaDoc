@@ -1,7 +1,7 @@
 export type Appointment = {
   ID: string;
   "Дата и время": string;
-  "Дата n8n": string; // dd.MM.yyyy
+  "Дата n8n": string;
   "Доктор ФИО": string;
   "Пациент ФИО": string;
   Статус: "Оплачено" | "Ожидаем" | "Со скидкой" | string;

@@ -28,21 +28,15 @@ import AppointmentsList from "./components/AppointmentsList";
 import ServicesList from "./components/ServicesList";
 import type { Appointment } from "./types";
 
-// Simple module-level cache to avoid refetching on every navigation
-let CACHED_ALL: Appointment[] | null = null;
-let CACHED_SERVICES: Array<Record<string, unknown>> | null = null;
-let CACHED_INIT_DATE: string | null = null;
+/* Simple cache (оставляем только для услуг)
+   Примечание: кэш приёмов отключён, т.к. теперь грузим серверно отфильтрованные по дате данные */
+ // let CACHED_ALL: Appointment[] | null = null;
+// let CACHED_INIT_DATE: string | null = null;
 
 // Helper to format today like 15.11.2025
 const formatRuDate = (d: Date) =>
   d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
 
-function parseRuDate(s: string): Date | null {
-  const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(s);
-  if (!m) return null;
-  const [, d, mth, y] = m;
-  return new Date(Number(y), Number(mth) - 1, Number(d));
-}
 
 /**
  * Parse numbers from mixed formats safely:
@@ -73,6 +67,148 @@ function parseNumberSafe(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+ 
+// Debounce helper (как на странице поиска пациентов)
+function useDebouncedValue<T>(value: T, delay = 300) {
+  const [debounced, setDebounced] = React.useState(value);
+  React.useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return debounced;
+}
+ 
+function isAbortError(e: unknown): boolean {
+  if (!e) return false;
+  if (typeof e === "object" && e !== null) {
+    const any = e as { name?: string; code?: unknown; message?: unknown };
+    const name = String(any.name ?? "");
+    const code = String(any.code ?? "");
+    const msg = String(any.message ?? "");
+    if (name === "AbortError") return true;
+    if (code === "ABORT_ERR" || code === "20") return true;
+    if (msg.toLowerCase().includes("aborted") || msg.toLowerCase().includes("abort")) return true;
+  } else if (typeof e === "string") {
+    const s = e.toLowerCase();
+    if (s.includes("abort")) return true;
+  }
+  return false;
+}
+
+// Paged fetch helper to bypass 1000 row per page limit
+async function fetchPagedAll(table: string, ctrl: AbortController, pageSize = 1000, maxPages = 5) {
+  const acc: Array<Record<string, unknown>> = [];
+  for (let p = 0; p < maxPages; p++) {
+    const from = p * pageSize;
+    const to = from + pageSize - 1;
+    const { data, error } = await supabase
+      .schema("public")
+      .from(table)
+      .select("*")
+      .range(from, to)
+      .abortSignal(ctrl.signal);
+    if (error) {
+      // stop on error, return what we have
+      break;
+    }
+    const chunk = (data ?? []) as Array<Record<string, unknown>>;
+    acc.push(...chunk);
+    if (chunk.length < pageSize) break; // last page
+  }
+  return acc;
+}
+
+const importMetaEnv = ((import.meta as unknown) as { env?: Record<string, string | undefined> }).env || {};
+const APPTS_TABLE: string = importMetaEnv.VITE_APPTS_TABLE || "FullAppointmentsView";
+const SERVICES_TABLE: string = importMetaEnv.VITE_SERVICES_TABLE || "FullAppointmentsView";
+
+function toRuFromIso(iso: string): string {
+  const [yyyy, mm, dd] = String(iso || "").split("-");
+  if (yyyy && mm && dd) return `${dd}.${mm}.${yyyy}`;
+  return "";
+}
+
+function normalizeToken10(s?: unknown): string {
+  if (!s) return "";
+  const str = String(s).trim();
+  return str.slice(0, 10);
+}
+
+function rowMatchesDate(row: Record<string, unknown>, isoDate: string): boolean {
+  if (!isoDate) return true;
+  const ru = toRuFromIso(isoDate);
+  const candidatesKeys = [
+    "Дата n8n",
+    "Дата",
+    "Дата расчета",
+    "Дата приема",
+    "Дата приёма",
+    "Дата визита",
+  ];
+  for (const k of candidatesKeys) {
+    const v = (row as Record<string, unknown>)[k];
+    const token = normalizeToken10(v);
+    if (token === ru || token === isoDate) return true;
+  }
+  const dv = normalizeToken10((row as Record<string, unknown>)["Дата и время"]);
+  if (dv === ru || dv === isoDate) return true;
+  // Try to extract dd.MM.yyyy or yyyy-MM-dd from arbitrary strings
+  const str = String((row as Record<string, unknown>)["Дата и время"] ?? "");
+  const ruMatch = str.match(/(\d{2}\.\d{2}\.\d{4})/);
+  const isoMatch = str.match(/(\d{4}-\d{2}-\d{2})/);
+  if (ruMatch && ruMatch[1] === ru) return true;
+  if (isoMatch && isoMatch[1] === isoDate) return true;
+  return false;
+}
+
+// Helpers to extract latest ISO date (yyyy-MM-dd) from a row with various date fields
+function toIsoFromRu(ru: string): string {
+  // dd.MM.yyyy -> yyyy-MM-dd
+  const m = ru.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (m) {
+    const [, dd, mm, yyyy] = m;
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  return "";
+}
+
+function extractIsoDateFromRow(row: Record<string, unknown>): string {
+  const candidatesKeys = [
+    "Дата n8n",
+    "Дата",
+    "Дата расчета",
+    "Дата приема",
+    "Дата приёма",
+    "Дата визита",
+  ];
+
+  // direct candidates (exact match token)
+  for (const k of candidatesKeys) {
+    const v = (row as Record<string, unknown>)[k];
+    const token = normalizeToken10(v);
+    if (!token) continue;
+    if (token.includes(".")) {
+      const iso = toIsoFromRu(token);
+      if (iso) return iso;
+    }
+    if (token.includes("-")) {
+      return token;
+    }
+  }
+
+  // Try from "Дата и время"
+  const str = String((row as Record<string, unknown>)["Дата и время"] ?? "");
+  const ruMatch = str.match(/(\d{2}\.\d{2}\.\d{4})/);
+  if (ruMatch && ruMatch[1]) {
+    const iso = toIsoFromRu(ruMatch[1]);
+    if (iso) return iso;
+  }
+  const isoMatch = str.match(/(\d{4}-\d{2}-\d{2})/);
+  if (isoMatch && isoMatch[1]) return isoMatch[1];
+
+  return "";
+}
+ 
 type RuAppointmentRow = {
   "ID": string | number;
   "Дата и время": string | null;
@@ -107,14 +243,20 @@ type RuAppointmentRow = {
 export const HomePage: React.FC = () => {
   // Appointments state
   const [loading, setLoading] = React.useState(true);
-  const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
   const [all, setAll] = React.useState<Appointment[]>([]);
 
   // UI state
   const [filtersOpen, setFiltersOpen] = React.useState(false);
 
   // Filters
-  const [date, setDate] = React.useState<string>("");
+  // Дата по умолчанию — сегодня (yyyy-MM-dd), чтобы сразу грузить серверно отфильтрованные данные
+  const [date, setDate] = React.useState<string>(() => {
+    const t = new Date();
+    const dd = String(t.getDate()).padStart(2, "0");
+    const mm = String(t.getMonth() + 1).padStart(2, "0");
+    const yyyy = t.getFullYear();
+    return `${yyyy}-${mm}-${dd}`;
+  });
   const [status, setStatus] = React.useState<Record<string, boolean>>({
     "Оплачено": true,
     "Ожидаем": true,
@@ -127,38 +269,45 @@ export const HomePage: React.FC = () => {
 
   // Services state
   const [servicesLoading, setServicesLoading] = React.useState(true);
-  const [servicesError, setServicesError] = React.useState<string | null>(null);
-  const [services, setServices] = React.useState<Array<Record<string, unknown>>>([]);
+  const [servicesRowsAll, setServicesRowsAll] = React.useState<Array<Record<string, unknown>>>([]);
+  // Latest dates detected in sources
+  const [latestApptIso, setLatestApptIso] = React.useState<string>("");
+  const [latestServiceIso, setLatestServiceIso] = React.useState<string>("");
+  const autoDateSetRef = React.useRef(false);
 
-// Fetch appointments
+  // Контроллеры и запомненная рабочая таблица для сокращения числа запросов
+  const apptsCtrlRef = React.useRef<AbortController | null>(null);
+  const servicesCtrlRef = React.useRef<AbortController | null>(null);
+
+  // Debounce по дате — чтобы ограничить частоту запросов при изменении
+  const debouncedDate = useDebouncedValue(date, 300);
+
+  // Fetch appointments (серверная фильтрация по дате, один запрос, отмена предыдущего)
   React.useEffect(() => {
-    (async () => {
-      if (CACHED_ALL) {
-        setAll(CACHED_ALL);
-        if (CACHED_INIT_DATE) setDate(CACHED_INIT_DATE);
-        setLoading(false);
-        return;
-      }
-      try {
-        // Query Appointments view using Russian column names
-        const selectClause = "*";
-        let rows: RuAppointmentRow[] | null = null;
-        let lastError: unknown = null;
-        for (const tableName of ["FullAppointmentsView", "AppointmentsView", "Appointments"]) {
-          const { data, error } = await supabase
-            .schema("public")
-            .from(tableName)
-            .select(selectClause);
-          if (!error) {
-            rows = data as RuAppointmentRow[] | null;
-            lastError = null;
-            break;
-          }
-          lastError = error;
-        }
-        if (lastError) throw lastError;
+    const prev = apptsCtrlRef.current;
+    if (prev) prev.abort();
+    const ctrl = new AbortController();
+    apptsCtrlRef.current = ctrl;
 
-        const mapped: Appointment[] = (rows ?? []).map((r: RuAppointmentRow) => ({
+    (async () => {
+      try {
+        setLoading(true);
+
+        // Серверная фильтрация убрана — фильтрация по дате выполняется на клиенте
+
+        // Пагинация, чтобы покрыть большие объёмы данных (до 5k строк)
+        const dataAll = await fetchPagedAll(APPTS_TABLE, ctrl, 1000, 5);
+        const rows = (dataAll ?? []) as RuAppointmentRow[];
+        // compute latest date across fetched appointments
+        const apptLatestIso = rows.reduce((acc, r) => {
+          const iso = extractIsoDateFromRow(r as unknown as Record<string, unknown>);
+          if (!iso) return acc;
+          if (!acc) return iso;
+          return new Date(iso) > new Date(acc) ? iso : acc;
+        }, "");
+        setLatestApptIso(apptLatestIso);
+
+        const mapped: Appointment[] = rows.map((r) => ({
           ID: String(
             (r["ID"] ??
               r["Прием ID"] ??
@@ -190,166 +339,73 @@ export const HomePage: React.FC = () => {
           "Долг": r["Долг"] != null ? parseNumberSafe(r["Долг"]) : undefined,
         }));
 
+        if (ctrl.signal.aborted) return;
         setAll(mapped);
-        CACHED_ALL = mapped;
-
-        // Initialize date filter to latest by "Дата n8n"
-        const latestRu = mapped
-          .map((a) => a["Дата n8n"]) // dd.MM.yyyy
-          .filter(Boolean)
-          .sort((a, b) => {
-            const da = parseRuDate(a);
-            const db = parseRuDate(b);
-            const ta = da ? da.getTime() : -Infinity;
-            const tb = db ? db.getTime() : -Infinity;
-            return tb - ta;
-          })[0];
-        if (latestRu) {
-          const [dd, mm, yyyy] = latestRu.split(".");
-          const iso = `${yyyy}-${mm}-${dd}`;
-          setDate(iso);
-          CACHED_INIT_DATE = iso;
-        }
       } catch (e: unknown) {
+        if (isAbortError(e)) return;
         console.error(e);
-        const errObj = (typeof e === "object" && e !== null ? e : {}) as {
-          message?: string;
-          error_description?: string;
-          hint?: string;
-          details?: string;
-          code?: string;
-        };
-        const msg =
-          errObj.message ??
-          errObj.error_description ??
-          errObj.hint ??
-          errObj.details ??
-          (typeof e === "object" ? JSON.stringify(e) : String(e));
-        setErrorMsg(msg);
       } finally {
-        setLoading(false);
+        if (!ctrl.signal.aborted) setLoading(false);
       }
     })();
+
+    return () => {
+      if (apptsCtrlRef.current === ctrl) apptsCtrlRef.current.abort();
+    };
   }, []);
 
   // Build Services from FullAppointmentsView/AppointmentsView (no separate Services table needed)
+  // Build Services (по текущей дате; один активный запрос, отмена предыдущего)
   React.useEffect(() => {
+    const prev = servicesCtrlRef.current;
+    if (prev) prev.abort();
+    const ctrl = new AbortController();
+    servicesCtrlRef.current = ctrl;
+
     (async () => {
-      if (CACHED_SERVICES) {
-        setServices(CACHED_SERVICES as Array<Record<string, unknown>>);
-        setServicesLoading(false);
-        setServicesError(null);
-        return;
-      }
       try {
         setServicesLoading(true);
-        setServicesError(null);
 
-        let rows: Array<Record<string, unknown>> | null = null;
-        let lastError: unknown = null;
-        for (const tableName of ["FullAppointmentsView", "AppointmentsView"]) {
-          const { data, error } = await supabase
-            .schema("public")
-            .from(tableName)
-            .select("*");
-          if (!error) {
-            rows = (data ?? []) as Array<Record<string, unknown>>;
-            lastError = null;
-            break;
-          }
-          lastError = error;
-        }
-        if (lastError) throw lastError;
+        // Пагинация, чтобы покрыть большие объёмы данных (до 5k строк)
+        const dataAll = await fetchPagedAll(SERVICES_TABLE, ctrl, 1000, 5);
 
-        type ServiceObj = {
-          ID: string;
-          "Название услуги": string;
-          "Категория": string;
-          "Стоимость, сом": number;
-        };
-
-        const map = new Map<string, ServiceObj>();
-        for (const r of rows ?? []) {
-          const get = (k: string) => (r as Record<string, unknown>)[k];
-
-          const sid =
-            String(
-              get("Услуга ID") ??
-                get("Service ID") ??
-                get("service_id") ??
-                get("serviceId") ??
-                get("Услуга") ??
-                get("Название услуги") ??
-                get("service_name") ??
-                get("ID") ??
-                ""
-            ) || "";
-          if (!sid) continue;
-
-          const name = String(
-            get("Название услуги") ??
-              get("Услуга") ??
-              get("service_name") ??
-              sid
-          );
-
-          const category = String(
-            get("Категория") ??
-              get("category") ??
-              get("Сотрудник ID") ??
-              get("Доктор ФИО") ??
-              get("Доктор") ??
-              ""
-          );
-
-          const priceVal =
-            (get("Стоимость, сом") ??
-              get("Стоимость") ??
-              get("Итого, сом") ??
-              get("price") ??
-              get("amount") ??
-              get("cost")) as number | string | null | undefined;
-          const price = Number(priceVal ?? 0);
-
-          const prev = map.get(sid);
-          if (!prev) {
-            map.set(sid, {
-              ID: sid,
-              "Название услуги": name,
-              "Категория": category,
-              "Стоимость, сом": price,
-            });
-          } else {
-            if (!prev["Название услуги"] && name) prev["Название услуги"] = name;
-            if (!prev["Категория"] && category) prev["Категория"] = category;
-            if (!prev["Стоимость, сом"] && price) prev["Стоимость, сом"] = price;
-          }
-        }
-
-        const servicesArr = Array.from(map.values()) as Array<Record<string, unknown>>;
-        setServices(servicesArr);
-        CACHED_SERVICES = servicesArr;
+        const rowsAll = (dataAll ?? []) as Array<Record<string, unknown>>;
+        // compute latest date across fetched services rows (before date filtering)
+        const svcLatestIso = rowsAll.reduce((acc, r) => {
+          const iso = extractIsoDateFromRow(r as Record<string, unknown>);
+          if (!iso) return acc;
+          if (!acc) return iso;
+          return new Date(iso) > new Date(acc) ? iso : acc;
+        }, "");
+        setLatestServiceIso(svcLatestIso);
+        if (ctrl.signal.aborted) return;
+        setServicesRowsAll(rowsAll);
       } catch (e: unknown) {
+        if (isAbortError(e)) return;
         console.error(e);
-        const errObj = (typeof e === "object" && e !== null ? e : {}) as {
-          message?: string;
-          error_description?: string;
-          hint?: string;
-          details?: string;
-          code?: string;
-        };
-        const msg =
-          errObj.message ??
-          errObj.error_description ??
-          errObj.hint ??
-          errObj.details ??
-          (typeof e === "object" ? JSON.stringify(e) : String(e));
-        setServicesError(msg);
       } finally {
-        setServicesLoading(false);
+        if (!ctrl.signal.aborted) setServicesLoading(false);
       }
     })();
+
+    return () => {
+      if (servicesCtrlRef.current === ctrl) servicesCtrlRef.current.abort();
+    };
   }, []);
+
+  // Auto-set date to latest available across appointments/services (one-time on load)
+  React.useEffect(() => {
+    const candidates = [latestApptIso, latestServiceIso].filter(Boolean);
+    if (candidates.length === 0) return;
+    const latest = candidates.reduce((acc, iso) => {
+      if (!acc) return iso;
+      return new Date(iso) > new Date(acc) ? iso : acc;
+    }, "");
+    if (latest && latest !== date && !autoDateSetRef.current) {
+      setDate(latest);
+      autoDateSetRef.current = true;
+    }
+  }, [latestApptIso, latestServiceIso]); // do not add 'date' to avoid loops
 
   // Derived
   const ruDateFromInput = React.useMemo(() => {
@@ -360,7 +416,7 @@ export const HomePage: React.FC = () => {
 
   const filtered = React.useMemo(() => {
     return all.filter((a) => {
-      if (ruDateFromInput && a["Дата n8n"] !== ruDateFromInput) return false;
+      if (date && !rowMatchesDate(a as unknown as Record<string, unknown>, date)) return false;
       if (status[a.Статус] === false) return false;
       if (onlyNight && !(a.Ночь === true || a.Ночь === "true")) return false;
       if (paymentType === "cash" && !(Number(a["Наличные"] ?? 0) > 0)) return false;
@@ -382,6 +438,74 @@ export const HomePage: React.FC = () => {
         : filtered.reduce((acc, a) => acc + Number(a["Итого, сом"] ?? a["Стоимость"] ?? 0), 0),
     [filtered, revenueMode]
   );
+
+  // Services derived on client: фильтрация по дате + агрегация без дополнительных сетевых запросов
+  const servicesFiltered = React.useMemo(() => {
+    const rows = debouncedDate
+      ? servicesRowsAll.filter((r) => rowMatchesDate(r, debouncedDate))
+      : servicesRowsAll;
+
+    type ServiceObj = {
+      ID: string;
+      "Название услуги": string;
+      "Категория": string;
+      "Стоимость, сом": number;
+    };
+
+    const map = new Map<string, ServiceObj>();
+    for (const r of rows) {
+      const get = (k: string) => (r as Record<string, unknown>)[k];
+
+      const sid =
+        String(
+          get("Услуга ID") ??
+            get("Service ID") ??
+            get("service_id") ??
+            get("serviceId") ??
+            get("Услуга") ??
+            get("Название услуги") ??
+            get("service_name") ??
+            get("ID") ??
+            ""
+        ) || "";
+      if (!sid) continue;
+
+      const name = String(get("Название услуги") ?? get("Услуга") ?? get("service_name") ?? sid);
+
+      const category = String(
+        get("Категория") ??
+          get("category") ??
+          get("Сотрудник ID") ??
+          get("Доктор ФИО") ??
+          get("Доктор") ??
+          ""
+      );
+
+      const priceVal =
+        (get("Стоимость, сом") ??
+          get("Стоимость") ??
+          get("Итого, сом") ??
+          get("price") ??
+          get("amount") ??
+          get("cost")) as number | string | null | undefined;
+      const price = Number(priceVal ?? 0);
+
+      const prevSvc = map.get(sid);
+      if (!prevSvc) {
+        map.set(sid, {
+          ID: sid,
+          "Название услуги": name,
+          "Категория": category,
+          "Стоимость, сом": price,
+        });
+      } else {
+        if (!prevSvc["Название услуги"] && name) prevSvc["Название услуги"] = name;
+        if (!prevSvc["Категория"] && category) prevSvc["Категория"] = category;
+        if (!prevSvc["Стоимость, сом"] && price) prevSvc["Стоимость, сом"] = price;
+      }
+    }
+    return Array.from(map.values()) as Array<Record<string, unknown>>;
+  }, [servicesRowsAll, debouncedDate]);
 
   const resetFilters = () => {
     const today = new Date();
@@ -517,7 +641,7 @@ export const HomePage: React.FC = () => {
           <AppointmentsList
             titleDate={ruDateFromInput}
             loading={loading}
-            errorMsg={errorMsg}
+            errorMsg={null}
             items={filtered}
             onOpenFilters={() => setFiltersOpen(true)}
           />
@@ -525,7 +649,7 @@ export const HomePage: React.FC = () => {
 
         {/* Column 2: Services */}
         <Grid item xs={12} md={4}>
-          <ServicesList loading={servicesLoading} errorMsg={servicesError} items={services} />
+          <ServicesList loading={servicesLoading} errorMsg={null} items={servicesFiltered} />
         </Grid>
 
         {/* Column 3: Placeholder for future */}

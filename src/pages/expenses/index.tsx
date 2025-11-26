@@ -2,7 +2,6 @@ import React from "react";
 import { DataGrid, type GridColDef, type GridRenderCellParams, type GridColumnVisibilityModel } from "@mui/x-data-grid";
 import { List } from "@refinedev/mui";
 import { Box, Stack, Button, TextField, IconButton, Tooltip, Menu, MenuItem, ListItemIcon, ListItemText, Divider, Chip, Fab } from "@mui/material";
-import Autocomplete from "@mui/material/Autocomplete";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { useTheme } from "@mui/material/styles";
 import AddIcon from "@mui/icons-material/Add";
@@ -20,13 +19,15 @@ import { ExpenseDetailsDrawer } from "../../components/expenses/ExpenseDetailsDr
 import { supabase } from "../../utility/supabaseClient";
 import { fetchEmployees } from "../../services/employees";
 
+const importMetaEnv = ((import.meta as unknown) as { env?: Record<string, string | undefined> }).env || {};
+const EMPLOYEES_SOURCE: string = importMetaEnv.VITE_EMPLOYEES_TABLE || "EmployeesView";
+
 const ActionsCell: React.FC<{
   row: Expense;
   onView: (e: Expense) => void;
   onEdit: (e: Expense) => void;
   onDelete: (e: Expense) => void;
 }> = ({ row, onView, onEdit, onDelete }) => {
-
   return (
     <Stack direction="row" justifyContent="flex-end" sx={{ width: "100%", pr: 0.5 }}>
       <ActionsMenu row={row} onView={onView} onEdit={onEdit} onDelete={onDelete} />
@@ -111,7 +112,6 @@ const ExpensesListPage: React.FC = () => {
     syncWithLocation: false,
   });
 
-
   const isExpense = (r: unknown): r is Expense =>
     typeof r === "object" && r !== null && "id" in r;
 
@@ -133,22 +133,8 @@ const ExpensesListPage: React.FC = () => {
     updated_at: r.updated_at ?? "",
   }));
 
-  type ExpenseCategory = {
-    id: string;
-    name: string;
-  };
 
   // Helpers to avoid any: robust id and name extraction
-  const getIdFrom = (o: Record<string, unknown>): string => {
-    const idKey =
-      ("id" in o && "id") ||
-      ("ID" in o && "ID") ||
-      Object.keys(o).find((k) => /^id$/i.test(k));
-    const idRaw = idKey ? o[idKey as keyof typeof o] : undefined;
-    if (typeof idRaw === "string") return idRaw;
-    if (typeof idRaw === "number") return String(idRaw);
-    return "";
-  };
 
   const getNameFrom = (o: Record<string, unknown>): string => {
     const directKeys = ["full_name", "fullName", "name", "fio", "ФИО сотрудников", "ФИО"];
@@ -164,8 +150,8 @@ const ExpensesListPage: React.FC = () => {
         vals.push(v.trim());
       }
     }
-    const fa = o["first_name"];
-    const fb = o["last_name"];
+    const fa = (o as Record<string, unknown>)["first_name"];
+    const fb = (o as Record<string, unknown>)["last_name"];
     const combined = `${typeof fa === "string" ? fa.trim() : ""}${
       (typeof fa === "string" && fa && typeof fb === "string" && fb) ? " " : ""
     }${typeof fb === "string" ? fb.trim() : ""}`.trim();
@@ -175,279 +161,32 @@ const ExpensesListPage: React.FC = () => {
   };
 
   const [employees, setEmployees] = React.useState<EmployeesRow[]>([]);
-  const [categories, setCategories] = React.useState<ExpenseCategory[]>([]);
-  const [employeeFilter, setEmployeeFilter] = React.useState<string>("");
-  const [categoryFilter, setCategoryFilter] = React.useState<string>("");
   const [searchQuery, setSearchQuery] = React.useState<string>("");
   // Кэш имён сотрудников по id, подгружаем по мере необходимости (если общий список недоступен из-за RLS)
   const [nameCache, setNameCache] = React.useState<Map<string, string>>(new Map());
 
+  // Единоразовая загрузка сотрудников и категорий (без перебора множества таблиц)
   React.useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
-      // Fast path: unified employees fetch via service
       try {
-        const [emps, catRes2] = await Promise.all([
-          fetchEmployees(),
-          supabase.from("expense_category").select("id, name"),
-        ]);
-        const cats2: { id: string; name: string }[] = [];
-        if (Array.isArray(catRes2?.data)) {
-          for (const c of catRes2.data as unknown[]) {
-            if (typeof c === "object" && c !== null) {
-              const r = c as { id: string | number; name?: unknown };
-              const idRaw = r.id;
-              const nameRaw = r.name;
-              if (idRaw != null && typeof nameRaw === "string") {
-                const id = typeof idRaw === "string" ? idRaw : String(idRaw);
-                cats2.push({ id, name: nameRaw });
-              }
-            }
-          }
-        }
+        const emps = await fetchEmployees();
         if (!cancelled) {
-          setCategories(cats2);
-          if (emps.length > 0) {
-            setEmployees(emps);
-            return;
-          }
-        }
-      } catch {
-        // fallback to legacy code below if service fails
-      }
-      const [empRes1, empRes2, empRes3, catRes] = await Promise.all([
-        supabase
-          .from("employees")
-          .select("*"),
-        supabase
-          .from("Employes")
-          .select("*"),
-        supabase
-          .from("Employes")
-          .select("*"),
-        supabase.from("expense_category").select("id, name"),
-      ]);
-
-      const nameById = new Map<string, string>();
-
-      const considerEmp = (rec: unknown) => {
-        if (typeof rec !== "object" || rec === null) return;
-        const r = rec as Record<string, unknown>;
-        const id = getIdFrom(r);
-        if (!id) return;
-        const name = getNameFrom(r);
-        if (name.length > 0) {
-          nameById.set(id, name);
-        } else if (!nameById.has(id)) {
-          nameById.set(id, "");
-        }
-      };
-
-      if (Array.isArray(empRes1?.data)) {
-        for (const e of empRes1.data as unknown[]) considerEmp(e);
-      }
-      if (Array.isArray(empRes2?.data)) {
-        for (const e of empRes2.data as unknown[]) considerEmp(e);
-      }
-      if (Array.isArray(empRes3?.data)) {
-        for (const e of empRes3.data as unknown[]) considerEmp(e);
-      }
-
-      const mergedEmployees: EmployeesRow[] = Array.from(nameById, ([id, full_name]) => ({
-        id,
-        full_name: typeof full_name === "string" && full_name.trim().length > 0 ? full_name : id,
-      }));
-
-      const cats: ExpenseCategory[] = [];
-      const pushCat = (rec: unknown) => {
-        if (typeof rec !== "object" || rec === null) return;
-        const r = rec as Record<string, unknown>;
-        const idRaw = r.id;
-        const nameRaw = r.name;
-        if (idRaw === null || idRaw === undefined || typeof nameRaw !== "string") return;
-        const id = typeof idRaw === "string" ? idRaw : String(idRaw);
-        cats.push({ id, name: nameRaw });
-      };
-      if (typeof catRes?.data !== "undefined" && Array.isArray(catRes.data)) {
-        for (const c of catRes.data as unknown[]) pushCat(c);
-      }
-
-      let finalEmployees: EmployeesRow[] = mergedEmployees;
-      try {
-        if (finalEmployees.length === 0) {
-          const { data: empAll } = await supabase
-            .from("Employes")
-            .select("id, fullName, full_name, name, first_name, last_name, fio")
-            .order("fullName", { ascending: true });
-          if (Array.isArray(empAll)) {
-            finalEmployees = (empAll as unknown[]).map((r) => {
-              const obj = r as Record<string, unknown>;
-              const idRaw = obj.id;
-              const id = typeof idRaw === "string" ? idRaw : String(idRaw ?? "");
-              const f1 = obj.full_name;
-              const f2 = (obj as Record<string, unknown>).fullName;
-              const f3 = (obj as Record<string, unknown>).name;
-              const f4 = (obj as Record<string, unknown>).fio;
-              const fa = (obj as Record<string, unknown>).first_name;
-              const fb = (obj as Record<string, unknown>).last_name;
-              const combined = `${typeof fa === "string" ? fa.trim() : ""}${
-                (typeof fa === "string" && fa && typeof fb === "string" && fb) ? " " : ""
-              }${typeof fb === "string" ? fb.trim() : ""}`.trim();
-              const candidates = [f1, f2, f3, f4, combined].filter(
-                (s): s is string => typeof s === "string" && s.trim().length > 0,
-              );
-              return { id, full_name: candidates[0] ?? id };
-            });
-          }
-        }
-      } catch {
-        // ignore, keep mergedEmployees
-      }
-
-      // Extra generic fallback: try to discover likely employees table/columns
-      try {
-        if (finalEmployees.length === 0) {
-          const tables = ["Employes", "employees", "Employee", "employee", "users", "Profiles", "profiles", "staff", "Staff", "person", "persons", "People"];
-          for (const t of tables) {
-            const { data } = await supabase.from(t).select("*");
-            if (Array.isArray(data) && data.length > 0) {
-              const seen2 = new Set<string>();
-              const mapped: EmployeesRow[] = [];
-              for (const rec of data as unknown[]) {
-                if (typeof rec !== "object" || rec === null) continue;
-                const o = rec as Record<string, unknown>;
-                const idVal = o.id;
-                const id = typeof idVal === "string" ? idVal : typeof idVal === "number" ? String(idVal) : "";
-                if (!id || seen2.has(id)) continue;
-
-                const pref = ["full_name", "fullName", "fio", "name", "first_name", "last_name"];
-                let cand = "";
-                for (const p of pref) {
-                  const v = o[p];
-                  if (typeof v === "string" && v.trim().length > 0) { cand = v.trim(); break; }
-                }
-                if (!cand) {
-                  const fa = o["first_name"];
-                  const fb = o["last_name"];
-                  const combined = `${typeof fa === "string" ? fa.trim() : ""}${(typeof fa === "string" && fa && typeof fb === "string" && fb) ? " " : ""}${typeof fb === "string" ? fb.trim() : ""}`.trim();
-                  cand = combined;
-                }
-                if (!cand) {
-                  for (const k of Object.keys(o)) {
-                    const v = o[k];
-                    if (typeof v === "string" && /name|fio/i.test(k) && v.trim().length > 0) { cand = v.trim(); break; }
-                  }
-                }
-                mapped.push({ id, full_name: cand || id });
-                seen2.add(id);
-              }
-              if (mapped.length > 0) { finalEmployees = mapped; break; }
-            }
-          }
+          setEmployees(emps);
         }
       } catch {
         // ignore
       }
-
-      // Fallback: если ничего не нашли, пробуем получить только тех сотрудников, чьи ID реально встречаются в расходах.
-      // Это полезно при строгом RLS, когда list запрещён, но выборка по конкретному id разрешена.
-      if (finalEmployees.length === 0) {
-        try {
-          const ids = Array.from(
-            new Set(
-              normalizedRows
-                .map((r) => r.employee_id)
-                .filter((v): v is string => typeof v === "string" && v.trim().length > 0),
-            ),
-          );
-
-          if (ids.length > 0) {
-            const tables = ["employees", "Employes", "employee", "Employee", "profiles", "Profiles", "users", "staff", "Staff", "people", "Persons", "persons", "People"];
-            const collected: EmployeesRow[] = [];
-            const seenIds = new Set<string>();
-
-            for (const id of ids) {
-              let name: string | null = null;
-
-              for (const t of tables) {
-                try {
-                  const { data, error } = await supabase
-                    .from(t)
-                    .select("*")
-                    .eq("id", id)
-                    .maybeSingle();
-
-                  if (!error && data) {
-                    const d = data as Record<string, unknown>;
-                    const f1 = d["full_name"];
-                    const f2 = d["fullName"];
-                    const f3 = d["name"];
-                    const f4 = d["fio"];
-                    const fa = d["first_name"];
-                    const fb = d["last_name"];
-                    const combined = `${typeof fa === "string" ? fa.trim() : ""}${
-                      (typeof fa === "string" && fa && typeof fb === "string" && fb) ? " " : ""
-                    }${typeof fb === "string" ? fb.trim() : ""}`.trim();
-
-                    const candidates = [f1, f2, f3, f4, combined].filter(
-                      (s): s is string => typeof s === "string" && s.trim().length > 0,
-                    );
-                    if (candidates.length > 0) {
-                      name = candidates[0];
-                      break;
-                    }
-                  }
-                } catch {
-                  // пробуем следующую таблицу
-                }
-              }
-
-              if (!seenIds.has(id)) {
-                collected.push({ id, full_name: name ?? id });
-                seenIds.add(id);
-              }
-            }
-
-            if (collected.length > 0) {
-              finalEmployees = collected;
-            }
-          }
-        } catch {
-          // ignore
-        }
-      }
-
-      // Basic last-resort fallback: построить список по employee_id из расходов,
-      // если ничего не смогли получить из Supabase (полезно при строгом RLS).
-      if (finalEmployees.length === 0) {
-        const ids = Array.from(
-          new Set(
-            normalizedRows
-              .map((r) => r.employee_id)
-              .filter((v): v is string => typeof v === "string" && v.trim().length > 0),
-          ),
-        );
-        if (ids.length > 0) {
-          finalEmployees = ids.map((id) => ({ id, full_name: id }));
-        }
-      }
-
-      if (!cancelled) {
-        setEmployees(finalEmployees);
-        setCategories(cats);
-      }
     };
 
     load();
-
     return () => {
       cancelled = true;
     };
-  }, [normalizedRows]);
+  }, []);
 
-  // Догружаем имена сотрудников точечно для тех employee_id, которые присутствуют в расходах,
-  // если они не пришли в общем списке (обход и/или дополнение при строгих RLS).
+  // Догружаем имена сотрудников точечно по всем отсутствующим ID одной пачкой.
   React.useEffect(() => {
     let cancelled = false;
 
@@ -461,76 +200,44 @@ const ExpensesListPage: React.FC = () => {
       ),
     );
 
-    const tryFetchName = async (table: string, id: string): Promise<string | null> => {
-      const { data, error } = await supabase
-        .from(table)
-        .select("*")
-        .or(`id.eq.${id},ID.eq.${id}`)
-        .maybeSingle();
-      if (!error && data) {
-        const d = data as Record<string, unknown>;
-        const f1 = d["full_name"];
-        const f2 = d["fullName"];
-        const f3 = d["name"];
-        const f4 = d["fio"];
-        const fa = d["first_name"];
-        const fb = d["last_name"];
-        const combined = `${typeof fa === "string" ? fa.trim() : ""}${
-          (typeof fa === "string" && fa && typeof fb === "string" && fb) ? " " : ""
-        }${typeof fb === "string" ? fb.trim() : ""}`.trim();
-        const candidates = [f1, f2, f3, f4, combined].filter(
-          (s): s is string => typeof s === "string" && s.trim().length > 0,
-        );
-        return candidates[0] ?? null;
-      }
-      return null;
-    };
-
-    const loadOneByOne = async () => {
-      for (const id of missingIds) {
-        // пробуем несколько вероятных таблиц
-        const name =
-          (await tryFetchName("employees", id)) ??
-          (await tryFetchName("Employes", id)) ??
-          (await tryFetchName("employee", id)) ??
-          (await tryFetchName("Employee", id)) ??
-          (await tryFetchName("profiles", id)) ??
-          (await tryFetchName("Profiles", id)) ??
-          (await tryFetchName("users", id)) ??
-          (await tryFetchName("staff", id)) ??
-          (await tryFetchName("Staff", id)) ??
-          (await tryFetchName("people", id)) ??
-          (await tryFetchName("Persons", id)) ??
-          (await tryFetchName("persons", id)) ??
-          (await tryFetchName("People", id));
-
-        if (!cancelled) {
-          if (name) {
-            setNameCache((prev) => {
-              const m = new Map(prev);
-              if (!m.has(id)) m.set(id, name);
-              return m;
-            });
-          } else {
-            // сохранём хотя бы id, чтобы в таблице не был пустой столбец
-            setNameCache((prev) => {
-              const m = new Map(prev);
-              if (!m.has(id)) m.set(id, id);
-              return m;
-            });
-          }
+    const loadBulk = async () => {
+      if (missingIds.length === 0) return;
+      try {
+        const { data, error } = await supabase
+          .from(EMPLOYEES_SOURCE)
+          .select("id, ID, full_name, fullName, name, first_name, last_name, fio")
+          .in("id", missingIds)
+          .limit(1000);
+        if (!error && Array.isArray(data) && !cancelled) {
+          setNameCache((prev) => {
+            const m = new Map(prev);
+            for (const rec of data as unknown[]) {
+              if (typeof rec !== "object" || rec === null) continue;
+              const o = rec as Record<string, unknown>;
+              const idVal = (o["id"] ?? o["ID"]) as unknown;
+              const id =
+                typeof idVal === "string"
+                  ? idVal
+                  : typeof idVal === "number"
+                  ? String(idVal)
+                  : "";
+              if (!id || m.has(id)) continue;
+              const nm = getNameFrom(o);
+              m.set(id, nm || id);
+            }
+            return m;
+          });
         }
+      } catch {
+        // ignore
       }
     };
 
-    if (missingIds.length > 0) {
-      loadOneByOne();
-    }
-
+    loadBulk();
     return () => {
       cancelled = true;
     };
-  }, [normalizedRows, employees, nameCache, supabase]);
+  }, [normalizedRows, employees, nameCache]);
 
   const employeeNameById = React.useMemo(() => {
     const m = new Map<string, string>();
@@ -543,20 +250,10 @@ const ExpensesListPage: React.FC = () => {
     return m;
   }, [employees, nameCache]);
 
-  const employeeOptions = React.useMemo<EmployeesRow[]>(() => {
-    const map = new Map<string, string>();
-    for (const e of employees) map.set(e.id, e.full_name);
-    for (const [id, name] of nameCache) if (!map.has(id)) map.set(id, name);
-    const arr = Array.from(map, ([id, full_name]) => ({ id, full_name }));
-    arr.sort((a, b) => (a.full_name || a.id).localeCompare(b.full_name || b.id, "ru", { sensitivity: "base" }));
-    return arr;
-  }, [employees, nameCache]);
 
   const filteredRows: Expense[] = React.useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return normalizedRows.filter((r) => {
-      if (employeeFilter && r.employee_id !== employeeFilter) return false;
-      if (categoryFilter && (r.category ?? "") !== categoryFilter) return false;
       if (q) {
         const name = r.name.toLowerCase();
         const comment = (r.comment ?? "").toLowerCase();
@@ -566,7 +263,7 @@ const ExpensesListPage: React.FC = () => {
       }
       return true;
     });
-  }, [normalizedRows, employeeFilter, categoryFilter, searchQuery, employeeNameById]);
+  }, [normalizedRows, searchQuery, employeeNameById]);
 
   const [addOpen, setAddOpen] = React.useState(false);
   const [editOpen, setEditOpen] = React.useState(false);
@@ -581,26 +278,17 @@ const ExpensesListPage: React.FC = () => {
     setDrawerOpen(true);
     setEmployeeFullName(null);
     if (rec.employee_id) {
-      const tryFetch = async (table: string) => {
-        const { data, error } = await supabase
-          .from(table)
+      try {
+        const { data } = await supabase
+          .from(EMPLOYEES_SOURCE)
           .select("*")
           .or(`id.eq.${rec.employee_id},ID.eq.${rec.employee_id}`)
           .maybeSingle();
-        if (!error && data) {
-          const d = data as Record<string, unknown>;
-          const nm = getNameFrom(d);
-          return nm || null;
-        }
-        return null;
-      };
-
-      const name =
-        (await tryFetch("employees")) ??
-        (await tryFetch("Employes")) ??
-        (await tryFetch("Employes"));
-
-      if (name) setEmployeeFullName(name);
+        const nm = data && typeof data === "object" ? getNameFrom(data as Record<string, unknown>) : null;
+        if (nm) setEmployeeFullName(nm);
+      } catch {
+        // ignore
+      }
     }
   };
 
@@ -727,30 +415,6 @@ const ExpensesListPage: React.FC = () => {
             value={searchQuery}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
             sx={{ width: { xs: 1, md: 240 } }}
-          />
-          <Autocomplete<EmployeesRow, false, false, false>
-            size="small"
-            options={employeeOptions}
-            noOptionsText=""
-            value={employeeOptions.find((e) => e.id === employeeFilter) ?? null}
-            getOptionLabel={(option) => option.full_name || option.id}
-            isOptionEqualToValue={(o, v) => o.id === v.id}
-            onChange={(_e, newValue) => setEmployeeFilter(newValue?.id ?? "")}
-            renderInput={(params) => <TextField {...params} label="Сотрудник" />}
-            sx={{ width: { xs: 1, md: 240 } }}
-            componentsProps={{ popper: { sx: { zIndex: (theme) => theme.zIndex.modal + 1 } } }}
-          />
-          <Autocomplete<{ id: string; name: string }, false, false, false>
-            size="small"
-            options={categories}
-            noOptionsText=""
-            value={categories.find((c) => c.name === categoryFilter) ?? null}
-            getOptionLabel={(option) => option.name}
-            isOptionEqualToValue={(o, v) => o.id === v.id}
-            onChange={(_e, newValue) => setCategoryFilter(newValue?.name ?? "")}
-            renderInput={(params) => <TextField {...params} label="Категория" />}
-            sx={{ width: { xs: 1, md: 220 } }}
-            componentsProps={{ popper: { sx: { zIndex: (theme) => theme.zIndex.modal + 1 } } }}
           />
           <Button startIcon={<AddIcon />} variant="contained" onClick={() => setAddOpen(true)} sx={{ display: { xs: "none", lg: "inline-flex" } }}>
             Добавить расход

@@ -21,7 +21,8 @@ import HomeOutlined from "@mui/icons-material/HomeOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 // import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
-// import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
+import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
+import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
 // import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
 // import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 // import BlockOutlined from "@mui/icons-material/BlockOutlined";
@@ -189,6 +190,8 @@ const SidebarSecondary: React.FC = () => {
         <SidebarMenuItem to="/home" icon={<HomeOutlined />} label="Главная" collapsed={siderCollapsed} />
         <SidebarMenuItem to="/patient-search" icon={<SearchOutlined />} label="Поиск пациента" collapsed={siderCollapsed} />
         <SidebarMenuItem to="/expenses" icon={<PaymentsOutlined />} label="Расходы" collapsed={siderCollapsed} />
+        <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />
+        <SidebarMenuItem to="/services" icon={<MedicalServicesOutlined />} label="Услуги" collapsed={siderCollapsed} />
         {/* <SidebarMenuItem to="/doctor-visits" icon={<LocalHospitalOutlined />} label="Приемы для врачей" collapsed={siderCollapsed} />
         <SidebarMenuItem to="/cash" icon={<PaymentsOutlined />} label="Касса" collapsed={siderCollapsed} />
         <SidebarMenuItem to="/access" icon={<BadgeOutlined />} label="СКУД" collapsed={siderCollapsed} />

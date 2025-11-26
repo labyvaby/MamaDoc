@@ -30,6 +30,8 @@ const HomePage = lazy(() => import("./pages/home"));
 const AppointmentDetailsPage = lazy(() => import("./pages/home/appointment"));
 import PatientSearchPage from "./pages/patient-search";
 const ExpensesListPage = lazy(() => import("./pages/expenses"));
+const EmployeesPage = lazy(() => import("./pages/employees"));
+const ServicesPage = lazy(() => import("./pages/services"));
 
 // 🔥 SUPABASE
 import { dataProvider } from "@refinedev/supabase";
@@ -41,6 +43,8 @@ function App() {
     const prefetch = () => {
       import("./pages/home");
       import("./pages/expenses");
+      import("./pages/employees");
+      import("./pages/services");
     };
     const w = window as unknown as { requestIdleCallback?: (cb: () => void) => number };
     const ric = w.requestIdleCallback;
@@ -79,6 +83,14 @@ function App() {
                   {
                     name: "expenses",
                     list: "/expenses",
+                  },
+                  {
+                    name: "services",
+                    list: "/services",
+                  },
+                  {
+                    name: "employees",
+                    list: "/employees",
                   },
                 ]}
                 options={{
@@ -126,6 +138,22 @@ function App() {
                       element={
                         <Suspense fallback={<LinearProgress />}>
                           <ExpensesListPage />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="employees"
+                      element={
+                        <Suspense fallback={<LinearProgress />}>
+                          <EmployeesPage />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="services"
+                      element={
+                        <Suspense fallback={<LinearProgress />}>
+                          <ServicesPage />
                         </Suspense>
                       }
                     />

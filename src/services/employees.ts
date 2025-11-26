@@ -1,5 +1,7 @@
 import { supabase } from "../utility/supabaseClient";
 import type { EmployeesRow } from "../pages/expenses/types";
+const importMetaEnv = ((import.meta as unknown) as { env?: Record<string, string | undefined> }).env || {};
+const EMPLOYEES_SOURCE: string = importMetaEnv.VITE_EMPLOYEES_TABLE || "EmployeesView";
 
 const normalizeName = (o: Record<string, unknown>): string => {
   // Directly check common latin and cyrillic keys
@@ -71,29 +73,10 @@ const fetchFrom = async (table: string): Promise<EmployeesRow[]> => {
 };
 
 /**
- * Пытается получить сотрудников из наиболее вероятных таблиц.
- * Возвращает первый ненулевой список.
+ * Загружает сотрудников из источника EMPLOYEES_SOURCE (env VITE_EMPLOYEES_TABLE), по умолчанию EmployeesView.
+ * Исключает перебор множества таблиц, чтобы не плодить лишние сетевые запросы.
  */
 export const fetchEmployees = async (): Promise<EmployeesRow[]> => {
-  const candidates = [
-    "employees",
-    "Employes",
-    "employee",
-    "Employee",
-    "staff",
-    "Staff",
-    "profiles",
-    "Profiles",
-    "users",
-    "people",
-    "Persons",
-    "persons",
-    "People",
-  ];
-
-  for (const t of candidates) {
-    const rows = await fetchFrom(t);
-    if (rows.length > 0) return rows;
-  }
-  return [];
+  const rows = await fetchFrom(EMPLOYEES_SOURCE);
+  return rows;
 };
