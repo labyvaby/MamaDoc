@@ -186,7 +186,7 @@ export const AppointmentDetailsPage: React.FC = () => {
         setLoading(false);
       }
     })();
-  }, [id]);
+  }, []);
 
   const isNight = item ? item.Ночь === true || item.Ночь === "true" : false;
   const statusColor: "success" | "warning" | "default" =

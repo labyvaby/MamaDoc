@@ -15,15 +15,6 @@ import {
 } from "@mui/material";
 import { supabase } from "../../utility/supabaseClient";
 
-// Debounce helper
-function useDebouncedValue<T>(value: T, delay = 300) {
-  const [debounced, setDebounced] = React.useState(value);
-  React.useEffect(() => {
-    const id = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(id);
-  }, [value, delay]);
-  return debounced;
-}
 
 const importMetaEnv = ((import.meta as unknown) as { env?: Record<string, string | undefined> }).env || {};
 const SERVICES_TABLE: string = importMetaEnv.VITE_SERVICES_TABLE || "FullAppointmentsView";
@@ -35,15 +26,6 @@ function toRuFromIso(iso: string): string {
   return "";
 }
 
-function toIsoFromRu(ru: string): string {
-  // dd.MM.yyyy -> yyyy-MM-dd
-  const m = ru.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-  if (m) {
-    const [, dd, mm, yyyy] = m;
-    return `${yyyy}-${mm}-${dd}`;
-  }
-  return "";
-}
 
 function normalizeToken10(s?: unknown): string {
   if (!s) return "";
@@ -51,40 +33,6 @@ function normalizeToken10(s?: unknown): string {
   return str.slice(0, 10);
 }
 
-function extractIsoDateFromRow(row: Record<string, unknown>): string {
-  const candidatesKeys = [
-    "Дата n8n",
-    "Дата",
-    "Дата расчета",
-    "Дата приема",
-    "Дата приёма",
-    "Дата визита",
-  ];
-
-  for (const k of candidatesKeys) {
-    const v = (row as Record<string, unknown>)[k];
-    const token = normalizeToken10(v);
-    if (!token) continue;
-    if (token.includes(".")) {
-      const iso = toIsoFromRu(token);
-      if (iso) return iso;
-    }
-    if (token.includes("-")) {
-      return token;
-    }
-  }
-
-  const str = String((row as Record<string, unknown>)["Дата и время"] ?? "");
-  const ruMatch = str.match(/(\d{2}\.\d{2}\.\d{4})/);
-  if (ruMatch && ruMatch[1]) {
-    const iso = toIsoFromRu(ruMatch[1]);
-    if (iso) return iso;
-  }
-  const isoMatch = str.match(/(\d{4}-\d{2}-\d{2})/);
-  if (isoMatch && isoMatch[1]) return isoMatch[1];
-
-  return "";
-}
 
 function rowMatchesDate(row: Record<string, unknown>, isoDate: string): boolean {
   if (!isoDate) return true;
@@ -142,18 +90,19 @@ type ServiceObj = {
 
 const ServicesPage: React.FC = () => {
   const [loading, setLoading] = React.useState(true);
-  const [services, setServices] = React.useState<ServiceObj[]>([]);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
+  const [rowsAll, setRowsAll] = React.useState<Array<Record<string, unknown>>>([]);
 
   // дата фильтра (yyyy-MM-dd), автоподстановка последней доступной даты
   const [date, setDate] = React.useState<string>("");
-  const debouncedDate = useDebouncedValue(date, 300);
-  const [latestServiceIso, setLatestServiceIso] = React.useState<string>("");
-  const autoDateSetRef = React.useRef(false);
+  const debouncedDate = date;
+  const loadedRef = React.useRef(false);
 
   const ctrlRef = React.useRef<AbortController | null>(null);
 
   React.useEffect(() => {
+    if (loadedRef.current) return;
+    loadedRef.current = true;
     const prev = ctrlRef.current;
     if (prev) prev.abort();
     const ctrl = new AbortController();
@@ -167,79 +116,10 @@ const ServicesPage: React.FC = () => {
         // грузим весь список (с пагинацией до 5k записей)
         const rowsAll = await fetchPagedAll(SERVICES_TABLE, ctrl, 1000, 5);
 
-        // вычисляем последнюю доступную дату
-        const svcLatestIso = rowsAll.reduce((acc, r) => {
-          const iso = extractIsoDateFromRow(r as Record<string, unknown>);
-          if (!iso) return acc;
-          if (!acc) return iso;
-          return new Date(iso) > new Date(acc) ? iso : acc;
-        }, "");
-        setLatestServiceIso(svcLatestIso);
 
-        // фильтруем по выбранной дате (если задана)
-        const filteredRows = debouncedDate
-          ? rowsAll.filter((r) => rowMatchesDate(r as Record<string, unknown>, debouncedDate))
-          : rowsAll;
-
-        // агрегируем уникальные услуги
-        const map = new Map<string, ServiceObj>();
-        for (const r of filteredRows) {
-          const get = (k: string) => (r as Record<string, unknown>)[k];
-
-          const sid =
-            String(
-              get("Услуга ID") ??
-                get("Service ID") ??
-                get("service_id") ??
-                get("serviceId") ??
-                get("Услуга") ??
-                get("Название услуги") ??
-                get("service_name") ??
-                get("ID") ??
-                ""
-            ) || "";
-          if (!sid) continue;
-
-          const name = String(
-            get("Название услуги") ?? get("Услуга") ?? get("service_name") ?? sid
-          );
-
-          const category = String(
-            get("Категория") ??
-              get("category") ??
-              get("Сотрудник ID") ??
-              get("Доктор ФИО") ??
-              get("Доктор") ??
-              ""
-          );
-
-          const priceVal =
-            (get("Стоимость, сом") ??
-              get("Стоимость") ??
-              get("Итого, сом") ??
-              get("price") ??
-              get("amount") ??
-              get("cost")) as number | string | null | undefined;
-          const price = Number(priceVal ?? 0);
-
-          const prevSvc = map.get(sid);
-          if (!prevSvc) {
-            map.set(sid, {
-              ID: sid,
-              "Название услуги": name,
-              "Категория": category,
-              "Стоимость, сом": price,
-            });
-          } else {
-            if (!prevSvc["Название услуги"] && name) prevSvc["Название услуги"] = name;
-            if (!prevSvc["Категория"] && category) prevSvc["Категория"] = category;
-            if (!prevSvc["Стоимость, сом"] && price) prevSvc["Стоимость, сом"] = price;
-          }
-        }
-
-        const arr = Array.from(map.values());
+        // сохраняем сырой массив единожды (без авто-изменения выбранной даты)
         if (!ctrl.signal.aborted) {
-          setServices(arr);
+          setRowsAll(rowsAll);
         }
       } catch (e: unknown) {
         if (!ctrl.signal.aborted) {
@@ -255,21 +135,78 @@ const ServicesPage: React.FC = () => {
     return () => {
       if (ctrlRef.current === ctrl) ctrlRef.current.abort();
     };
-  }, [debouncedDate]);
+  }, []);
 
-  // Автоустановка даты на самую позднюю (однократно)
-  React.useEffect(() => {
-    if (!autoDateSetRef.current && latestServiceIso) {
-      setDate(latestServiceIso);
-      autoDateSetRef.current = true;
-    }
-  }, [latestServiceIso]);
 
   const ruDateFromInput = React.useMemo(() => {
     if (!date) return "";
     const [yyyy, mm, dd] = date.split("-");
     return `${dd}.${mm}.${yyyy}`;
   }, [date]);
+
+  // Услуги считаются на клиенте из rowsAll (без повторных сетевых запросов)
+  const services = React.useMemo(() => {
+    const filteredRows = debouncedDate
+      ? rowsAll.filter((r) => rowMatchesDate(r as Record<string, unknown>, debouncedDate))
+      : rowsAll;
+
+    const map = new Map<string, ServiceObj>();
+    for (const r of filteredRows) {
+      const get = (k: string) => (r as Record<string, unknown>)[k];
+
+      const sid =
+        String(
+          get("Услуга ID") ??
+            get("Service ID") ??
+            get("service_id") ??
+            get("serviceId") ??
+            get("Услуга") ??
+            get("Название услуги") ??
+            get("service_name") ??
+            get("ID") ??
+            ""
+        ) || "";
+      if (!sid) continue;
+
+      const name = String(
+        get("Название услуги") ?? get("Услуга") ?? get("service_name") ?? sid
+      );
+
+      const category = String(
+        get("Категория") ??
+          get("category") ??
+          get("Сотрудник ID") ??
+          get("Доктор ФИО") ??
+          get("Доктор") ??
+          ""
+      );
+
+      const priceVal =
+        (get("Стоимость, сом") ??
+          get("Стоимость") ??
+          get("Итого, сом") ??
+          get("price") ??
+          get("amount") ??
+          get("cost")) as number | string | null | undefined;
+      const price = Number(priceVal ?? 0);
+
+      const prevSvc = map.get(sid);
+      if (!prevSvc) {
+        map.set(sid, {
+          ID: sid,
+          "Название услуги": name,
+          "Категория": category,
+          "Стоимость, сом": price,
+        });
+      } else {
+        if (!prevSvc["Название услуги"] && name) prevSvc["Название услуги"] = name;
+        if (!prevSvc["Категория"] && category) prevSvc["Категория"] = category;
+        if (!prevSvc["Стоимость, сом"] && price) prevSvc["Стоимость, сом"] = price;
+      }
+    }
+
+    return Array.from(map.values());
+  }, [rowsAll, debouncedDate]);
 
   return (
     <Box sx={{ p: 2 }}>

@@ -120,7 +120,6 @@ async function fetchPagedAll(table: string, ctrl: AbortController, pageSize = 10
 
 const importMetaEnv = ((import.meta as unknown) as { env?: Record<string, string | undefined> }).env || {};
 const APPTS_TABLE: string = importMetaEnv.VITE_APPTS_TABLE || "FullAppointmentsView";
-const SERVICES_TABLE: string = importMetaEnv.VITE_SERVICES_TABLE || "FullAppointmentsView";
 
 function toRuFromIso(iso: string): string {
   const [yyyy, mm, dd] = String(iso || "").split("-");
@@ -161,53 +160,6 @@ function rowMatchesDate(row: Record<string, unknown>, isoDate: string): boolean 
   return false;
 }
 
-// Helpers to extract latest ISO date (yyyy-MM-dd) from a row with various date fields
-function toIsoFromRu(ru: string): string {
-  // dd.MM.yyyy -> yyyy-MM-dd
-  const m = ru.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-  if (m) {
-    const [, dd, mm, yyyy] = m;
-    return `${yyyy}-${mm}-${dd}`;
-  }
-  return "";
-}
-
-function extractIsoDateFromRow(row: Record<string, unknown>): string {
-  const candidatesKeys = [
-    "Дата n8n",
-    "Дата",
-    "Дата расчета",
-    "Дата приема",
-    "Дата приёма",
-    "Дата визита",
-  ];
-
-  // direct candidates (exact match token)
-  for (const k of candidatesKeys) {
-    const v = (row as Record<string, unknown>)[k];
-    const token = normalizeToken10(v);
-    if (!token) continue;
-    if (token.includes(".")) {
-      const iso = toIsoFromRu(token);
-      if (iso) return iso;
-    }
-    if (token.includes("-")) {
-      return token;
-    }
-  }
-
-  // Try from "Дата и время"
-  const str = String((row as Record<string, unknown>)["Дата и время"] ?? "");
-  const ruMatch = str.match(/(\d{2}\.\d{2}\.\d{4})/);
-  if (ruMatch && ruMatch[1]) {
-    const iso = toIsoFromRu(ruMatch[1]);
-    if (iso) return iso;
-  }
-  const isoMatch = str.match(/(\d{4}-\d{2}-\d{2})/);
-  if (isoMatch && isoMatch[1]) return isoMatch[1];
-
-  return "";
-}
  
 type RuAppointmentRow = {
   "ID": string | number;
@@ -250,13 +202,7 @@ export const HomePage: React.FC = () => {
 
   // Filters
   // Дата по умолчанию — сегодня (yyyy-MM-dd), чтобы сразу грузить серверно отфильтрованные данные
-  const [date, setDate] = React.useState<string>(() => {
-    const t = new Date();
-    const dd = String(t.getDate()).padStart(2, "0");
-    const mm = String(t.getMonth() + 1).padStart(2, "0");
-    const yyyy = t.getFullYear();
-    return `${yyyy}-${mm}-${dd}`;
-  });
+  const [date, setDate] = React.useState<string>("");
   const [status, setStatus] = React.useState<Record<string, boolean>>({
     "Оплачено": true,
     "Ожидаем": true,
@@ -268,16 +214,10 @@ export const HomePage: React.FC = () => {
   const [paymentType, setPaymentType] = React.useState<"any" | "cash" | "cashless">("any");
 
   // Services state
-  const [servicesLoading, setServicesLoading] = React.useState(true);
   const [servicesRowsAll, setServicesRowsAll] = React.useState<Array<Record<string, unknown>>>([]);
-  // Latest dates detected in sources
-  const [latestApptIso, setLatestApptIso] = React.useState<string>("");
-  const [latestServiceIso, setLatestServiceIso] = React.useState<string>("");
-  const autoDateSetRef = React.useRef(false);
 
   // Контроллеры и запомненная рабочая таблица для сокращения числа запросов
   const apptsCtrlRef = React.useRef<AbortController | null>(null);
-  const servicesCtrlRef = React.useRef<AbortController | null>(null);
 
   // Debounce по дате — чтобы ограничить частоту запросов при изменении
   const debouncedDate = useDebouncedValue(date, 300);
@@ -298,14 +238,6 @@ export const HomePage: React.FC = () => {
         // Пагинация, чтобы покрыть большие объёмы данных (до 5k строк)
         const dataAll = await fetchPagedAll(APPTS_TABLE, ctrl, 1000, 5);
         const rows = (dataAll ?? []) as RuAppointmentRow[];
-        // compute latest date across fetched appointments
-        const apptLatestIso = rows.reduce((acc, r) => {
-          const iso = extractIsoDateFromRow(r as unknown as Record<string, unknown>);
-          if (!iso) return acc;
-          if (!acc) return iso;
-          return new Date(iso) > new Date(acc) ? iso : acc;
-        }, "");
-        setLatestApptIso(apptLatestIso);
 
         const mapped: Appointment[] = rows.map((r) => ({
           ID: String(
@@ -341,6 +273,7 @@ export const HomePage: React.FC = () => {
 
         if (ctrl.signal.aborted) return;
         setAll(mapped);
+        setServicesRowsAll((dataAll ?? []) as Array<Record<string, unknown>>);
       } catch (e: unknown) {
         if (isAbortError(e)) return;
         console.error(e);
@@ -354,58 +287,7 @@ export const HomePage: React.FC = () => {
     };
   }, []);
 
-  // Build Services from FullAppointmentsView/AppointmentsView (no separate Services table needed)
-  // Build Services (по текущей дате; один активный запрос, отмена предыдущего)
-  React.useEffect(() => {
-    const prev = servicesCtrlRef.current;
-    if (prev) prev.abort();
-    const ctrl = new AbortController();
-    servicesCtrlRef.current = ctrl;
 
-    (async () => {
-      try {
-        setServicesLoading(true);
-
-        // Пагинация, чтобы покрыть большие объёмы данных (до 5k строк)
-        const dataAll = await fetchPagedAll(SERVICES_TABLE, ctrl, 1000, 5);
-
-        const rowsAll = (dataAll ?? []) as Array<Record<string, unknown>>;
-        // compute latest date across fetched services rows (before date filtering)
-        const svcLatestIso = rowsAll.reduce((acc, r) => {
-          const iso = extractIsoDateFromRow(r as Record<string, unknown>);
-          if (!iso) return acc;
-          if (!acc) return iso;
-          return new Date(iso) > new Date(acc) ? iso : acc;
-        }, "");
-        setLatestServiceIso(svcLatestIso);
-        if (ctrl.signal.aborted) return;
-        setServicesRowsAll(rowsAll);
-      } catch (e: unknown) {
-        if (isAbortError(e)) return;
-        console.error(e);
-      } finally {
-        if (!ctrl.signal.aborted) setServicesLoading(false);
-      }
-    })();
-
-    return () => {
-      if (servicesCtrlRef.current === ctrl) servicesCtrlRef.current.abort();
-    };
-  }, []);
-
-  // Auto-set date to latest available across appointments/services (one-time on load)
-  React.useEffect(() => {
-    const candidates = [latestApptIso, latestServiceIso].filter(Boolean);
-    if (candidates.length === 0) return;
-    const latest = candidates.reduce((acc, iso) => {
-      if (!acc) return iso;
-      return new Date(iso) > new Date(acc) ? iso : acc;
-    }, "");
-    if (latest && latest !== date && !autoDateSetRef.current) {
-      setDate(latest);
-      autoDateSetRef.current = true;
-    }
-  }, [latestApptIso, latestServiceIso]); // do not add 'date' to avoid loops
 
   // Derived
   const ruDateFromInput = React.useMemo(() => {
@@ -649,7 +531,7 @@ export const HomePage: React.FC = () => {
 
         {/* Column 2: Services */}
         <Grid item xs={12} md={4}>
-          <ServicesList loading={servicesLoading} errorMsg={null} items={servicesFiltered} />
+          <ServicesList loading={loading} errorMsg={null} items={servicesFiltered} />
         </Grid>
 
         {/* Column 3: Placeholder for future */}
