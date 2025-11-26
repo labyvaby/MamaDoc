@@ -66,8 +66,6 @@ function parseNumberSafe(v: unknown): number {
   const n = parseFloat(norm);
   return Number.isFinite(n) ? n : 0;
 }
-
- 
 // Debounce helper (как на странице поиска пациентов)
 function useDebouncedValue<T>(value: T, delay = 300) {
   const [debounced, setDebounced] = React.useState(value);
@@ -96,14 +94,14 @@ function isAbortError(e: unknown): boolean {
 }
 
 // Paged fetch helper to bypass 1000 row per page limit
-async function fetchPagedAll(table: string, ctrl: AbortController, pageSize = 10) {
+async function fetchPagedAll(table: string, ctrl: AbortController, pageSize = 10, date = '(09.02.2023)') {
   const to = pageSize + pageSize - 1;
   const { data } = await supabase
     .schema("public")
     .from(table)
     .select("*")
     .range(pageSize, to)
-    .filter('Дата n8n', 'in', '(09.02.2023)')
+    .filter('Дата n8n', 'in', date)
     .abortSignal(ctrl.signal);
 
   return data;
@@ -195,7 +193,7 @@ export const HomePage: React.FC = () => {
         // Серверная фильтрация убрана — фильтрация по дате выполняется на клиенте
 
         // Пагинация, чтобы покрыть большие объёмы данных (до 5k строк)
-        const dataAll = await fetchPagedAll(APPTS_TABLE, ctrl, 10, 1);
+        const dataAll = await fetchPagedAll(APPTS_TABLE, ctrl, 10, '(09.02.2023)' );
         const rows = (dataAll ?? []) as RuAppointmentRow[];
 
         const mapped: Appointment[] = rows.map((r) => ({
@@ -231,7 +229,7 @@ export const HomePage: React.FC = () => {
         }));
 
         if (ctrl.signal.aborted) return;
-        setAll(mapped);
+        setAll(dataAll);
         setServicesRowsAll((dataAll ?? []) as Array<Record<string, unknown>>);
       } catch (e: unknown) {
         if (isAbortError(e)) return;
