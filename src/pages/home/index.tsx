@@ -26,7 +26,7 @@ import { supabase } from "../../utility/supabaseClient";
 import { formatKGS } from "../../utility/format";
 import AppointmentsList from "./components/AppointmentsList";
 import ServicesList from "./components/ServicesList";
-import type { Appointment } from "./types";
+import type { Appointment, RuAppointmentRow } from "./types";
 
 /* Simple cache (оставляем только для услуг)
    Примечание: кэш приёмов отключён, т.к. теперь грузим серверно отфильтрованные по дате данные */
@@ -96,26 +96,17 @@ function isAbortError(e: unknown): boolean {
 }
 
 // Paged fetch helper to bypass 1000 row per page limit
-async function fetchPagedAll(table: string, ctrl: AbortController, pageSize = 1000, maxPages = 5) {
-  const acc: Array<Record<string, unknown>> = [];
-  for (let p = 0; p < maxPages; p++) {
-    const from = p * pageSize;
-    const to = from + pageSize - 1;
-    const { data, error } = await supabase
-      .schema("public")
-      .from(table)
-      .select("*")
-      .range(from, to)
-      .abortSignal(ctrl.signal);
-    if (error) {
-      // stop on error, return what we have
-      break;
-    }
-    const chunk = (data ?? []) as Array<Record<string, unknown>>;
-    acc.push(...chunk);
-    if (chunk.length < pageSize) break; // last page
-  }
-  return acc;
+async function fetchPagedAll(table: string, ctrl: AbortController, pageSize = 10) {
+  const to = pageSize + pageSize - 1;
+  const { data } = await supabase
+    .schema("public")
+    .from(table)
+    .select("*")
+    .range(pageSize, to)
+    .filter('Дата n8n', 'in', '(09.02.2023)')
+    .abortSignal(ctrl.signal);
+
+  return data;
 }
 
 const importMetaEnv = ((import.meta as unknown) as { env?: Record<string, string | undefined> }).env || {};
@@ -159,38 +150,6 @@ function rowMatchesDate(row: Record<string, unknown>, isoDate: string): boolean 
   if (isoMatch && isoMatch[1] === isoDate) return true;
   return false;
 }
-
- 
-type RuAppointmentRow = {
-  "ID": string | number;
-  "Дата и время": string | null;
-  "Дата n8n": string | null;
-  "Доктор ФИО": string | null;
-  "Пациент ФИО": string | null;
-  // возможные альтернативные поля в представлении/запросе
-  "Доктор": string | null;
-  "Доктор Имя": string | null;
-  "Доктор Фамилия": string | null;
-  "Пациент": string | null;
-  "Пациент Имя": string | null;
-  "Пациент Фамилия": string | null;
-
-  "Прием ID"?: string | number | null;
-  "Appointment ID"?: string | number | null;
-  "Appointment_Id"?: string | number | null;
-  "Запись ID"?: string | number | null;
-  "Запись"?: string | number | null;
-  "id"?: string | number | null;
-
-  "Статус": string | null;
-  "Ночь": boolean | string | null;
-  "Стоимость": number | string | null;
-  "Итого, сом": number | string | null;
-  "Скидка": number | string | null;
-  "Наличные": number | string | null;
-  "Безналичные": number | string | null;
-  "Долг": number | string | null;
-};
 
 export const HomePage: React.FC = () => {
   // Appointments state
@@ -236,7 +195,7 @@ export const HomePage: React.FC = () => {
         // Серверная фильтрация убрана — фильтрация по дате выполняется на клиенте
 
         // Пагинация, чтобы покрыть большие объёмы данных (до 5k строк)
-        const dataAll = await fetchPagedAll(APPTS_TABLE, ctrl, 1000, 5);
+        const dataAll = await fetchPagedAll(APPTS_TABLE, ctrl, 10, 1);
         const rows = (dataAll ?? []) as RuAppointmentRow[];
 
         const mapped: Appointment[] = rows.map((r) => ({
