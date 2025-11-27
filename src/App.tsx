@@ -21,6 +21,7 @@ import { Header } from "./components/header";
 import { Sidebar } from "./components/sidebar";
 import { MobileSidebarProvider } from "./components/sidebar/mobile-context";
 import { ColorModeContextProvider } from "./contexts/color-mode";
+import { RequireAuth } from "./components/auth/RequireAuth";
 
 import { lazy, Suspense, useEffect } from "react";
 const UnderConstruction = lazy(() =>
@@ -32,6 +33,7 @@ import PatientSearchPage from "./pages/patient-search";
 const ExpensesListPage = lazy(() => import("./pages/expenses"));
 const EmployeesPage = lazy(() => import("./pages/employees"));
 const ServicesPage = lazy(() => import("./pages/services"));
+const LoginPage = lazy(() => import("./pages/auth/login"));
 
 // 🔥 SUPABASE
 import { dataProvider } from "@refinedev/supabase";
@@ -102,14 +104,16 @@ function App() {
                 <Routes>
                   <Route
                     element={
-                      <MobileSidebarProvider>
+                      <RequireAuth>
+                        <MobileSidebarProvider>
                         <ThemedLayout
                           Header={() => <Header sticky />}
                           Sider={() => <Sidebar />}
                         >
                           <Outlet />
                         </ThemedLayout>
-                      </MobileSidebarProvider>
+                        </MobileSidebarProvider>
+                      </RequireAuth>
                     }
                   >
                     <Route index element={<Navigate to="/home" replace />} />
@@ -166,6 +170,14 @@ function App() {
                       }
                     />
                   </Route>
+                <Route
+                  path="login"
+                  element={
+                    <Suspense fallback={<LinearProgress />}>
+                      <LoginPage />
+                    </Suspense>
+                  }
+                />
                 </Routes>
 
                 <RefineKbar />

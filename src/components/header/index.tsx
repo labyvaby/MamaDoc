@@ -2,6 +2,7 @@ import DarkModeOutlined from "@mui/icons-material/DarkModeOutlined";
 import LightModeOutlined from "@mui/icons-material/LightModeOutlined";
 import MenuOutlined from "@mui/icons-material/MenuOutlined";
 import FavoriteBorderOutlined from "@mui/icons-material/FavoriteBorderOutlined";
+import LogoutOutlined from "@mui/icons-material/LogoutOutlined";
 
 import AppBar from "@mui/material/AppBar";
 import Avatar from "@mui/material/Avatar";
@@ -13,9 +14,11 @@ import Typography from "@mui/material/Typography";
 
 import { useGetIdentity } from "@refinedev/core";
 import { RefineThemedLayoutHeaderProps } from "@refinedev/mui";
-import React, { useContext } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import { ColorModeContext } from "../../contexts/color-mode";
 import { useMobileSidebar } from "../sidebar/mobile-context";
+import { useNavigate } from "react-router";
+import { supabase } from "../../utility/supabaseClient";
 
 type IUser = {
   id: number;
@@ -29,6 +32,42 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
   const { mode, setMode } = useContext(ColorModeContext);
   const { data: user } = useGetIdentity<IUser>();
   const { toggle } = useMobileSidebar();
+  const navigate = useNavigate();
+  const [authEmail, setAuthEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    let unsub: (() => void) | undefined;
+
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getUser();
+        setAuthEmail(data?.user?.email ?? null);
+      } catch {
+        // ignore
+      }
+
+      const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+        setAuthEmail(session?.user?.email ?? null);
+      });
+      unsub = () => sub.subscription.unsubscribe();
+    })();
+
+    return () => {
+      try {
+        if (typeof unsub === "function") unsub();
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } finally {
+      navigate("/login", { replace: true });
+    }
+  };
 
   return (
     <AppBar
@@ -88,6 +127,15 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
               aria-label="Toggle color mode"
             >
               {mode === "dark" ? <LightModeOutlined /> : <DarkModeOutlined />}
+            </IconButton>
+
+            <IconButton
+              color="inherit"
+              onClick={handleLogout}
+              aria-label="Выйти"
+              title={authEmail ? `Выйти (${authEmail})` : "Выйти"}
+            >
+              <LogoutOutlined />
             </IconButton>
 
             {(user?.avatar || user?.name) && (
