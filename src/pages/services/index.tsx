@@ -4,6 +4,7 @@ import {
   Card,
   CardHeader,
   CardContent,
+  Button,
   Divider,
   Stack,
   TextField,
@@ -14,6 +15,8 @@ import {
   ListItemText,
 } from "@mui/material";
 import { supabase } from "../../utility/supabaseClient";
+import AddIcon from "@mui/icons-material/Add";
+import AddServiceDrawer from "../../components/services/AddServiceDrawer";
 
 
 const importMetaEnv = ((import.meta as unknown) as { env?: Record<string, string | undefined> }).env || {};
@@ -92,6 +95,8 @@ const ServicesPage: React.FC = () => {
   const [loading, setLoading] = React.useState(true);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
   const [rowsAll, setRowsAll] = React.useState<Array<Record<string, unknown>>>([]);
+  const [addOpen, setAddOpen] = React.useState(false);
+  const [added, setAdded] = React.useState<ServiceObj[]>([]);
 
   // дата фильтра (yyyy-MM-dd), автоподстановка последней доступной даты
   const [date, setDate] = React.useState<string>("");
@@ -208,10 +213,25 @@ const ServicesPage: React.FC = () => {
     return Array.from(map.values());
   }, [rowsAll, debouncedDate]);
 
+  const mergedServices = React.useMemo(() => {
+    const map = new Map<string, ServiceObj>();
+    for (const s of services) map.set(s.ID, s);
+    for (const s of added) map.set(s.ID, s);
+    return Array.from(map.values());
+  }, [services, added]);
+
   return (
     <Box sx={{ p: 2 }}>
       <Card variant="outlined">
-        <CardHeader title="Услуги" subheader={ruDateFromInput ? `Дата: ${ruDateFromInput}` : "Все даты"} />
+        <CardHeader
+          title="Услуги"
+          subheader={ruDateFromInput ? `Дата: ${ruDateFromInput}` : "Все даты"}
+          action={
+            <Button startIcon={<AddIcon />} variant="contained" onClick={() => setAddOpen(true)}>
+              Добавить
+            </Button>
+          }
+        />
         <Divider />
         <CardContent>
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="center" sx={{ mb: 2 }}>
@@ -225,7 +245,7 @@ const ServicesPage: React.FC = () => {
             />
             <Box sx={{ flex: 1 }} />
             <Typography variant="body2" color="text.secondary">
-              Найдено: {services.length}
+              Найдено: {mergedServices.length}
             </Typography>
           </Stack>
 
@@ -235,11 +255,11 @@ const ServicesPage: React.FC = () => {
             </Stack>
           ) : errorMsg ? (
             <Typography color="error">{errorMsg}</Typography>
-          ) : services.length === 0 ? (
+          ) : mergedServices.length === 0 ? (
             <Typography color="text.secondary">Нет данных.</Typography>
           ) : (
             <List dense>
-              {services.map((s) => (
+              {mergedServices.map((s) => (
                 <ListItem key={s.ID} disablePadding sx={{ py: 0.5 }}>
                   <ListItemText
                     primary={s["Название услуги"] || "—"}
@@ -257,6 +277,21 @@ const ServicesPage: React.FC = () => {
           )}
         </CardContent>
       </Card>
+      <AddServiceDrawer
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        onCreated={(rec) => {
+          setAdded((prev) => {
+            const item: ServiceObj = {
+              ID: String(rec.id ?? Date.now()),
+              "Название услуги": rec.name,
+              "Категория": rec.employee_name ?? "",
+              "Стоимость, сом": Number(rec.price ?? 0),
+            };
+            return [item, ...prev];
+          });
+        }}
+      />
     </Box>
   );
 };
