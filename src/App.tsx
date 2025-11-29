@@ -31,7 +31,7 @@ const HomePage = lazy(() => import("./pages/home"));
 const AppointmentDetailsPage = lazy(() => import("./pages/home/appointment"));
 import PatientSearchPage from "./pages/patient-search";
 const ExpensesListPage = lazy(() => import("./pages/expenses"));
-const EmployeesPage = lazy(() => import("./pages/employees"));
+const EmployeesPage = lazy(() => import("./pages/employes"));
 const ServicesPage = lazy(() => import("./pages/services"));
 const LoginPage = lazy(() => import("./pages/auth/login"));
 
@@ -45,7 +45,7 @@ function App() {
     const prefetch = () => {
       import("./pages/home");
       import("./pages/expenses");
-      import("./pages/employees");
+      import("./pages/employes");
       import("./pages/services");
     };
     const w = window as unknown as { requestIdleCallback?: (cb: () => void) => number };

@@ -41,9 +41,9 @@ const importMetaEnv = ((import.meta as unknown) as { env?: Record<string, string
 // - VITE_EMPLOYEES_SOURCE or VITE_EMPLOYEES_TABLE for reading (fallback to EmployeesView)
 // - VITE_EMPLOYEES_WRITE_TABLE for writes (fallback to 'employees')
 const EMPLOYEES_SOURCE: string = importMetaEnv.VITE_EMPLOYEES_SOURCE || importMetaEnv.VITE_EMPLOYEES_TABLE || "EmployeesView";
-const EMPLOYEES_WRITE: string = importMetaEnv.VITE_EMPLOYEES_WRITE_TABLE || "employees";
+const EMPLOYEES_WRITE: string = "Employes";
 
-type EmployeeRow = {
+type EmployesRow = {
   id: string;
   full_name: string;
   phone?: string | null;
@@ -78,7 +78,7 @@ function getIdFrom(o: Record<string, unknown>): string {
   // Common id fields across various views
   const idKeys = [
     "id", "ID",
-    "employee_id", "Employee_ID", "Employee ID",
+    "employes_id", "Employes_ID", "Employes ID",
     "doctor_id", "Doctor_ID", "Doctor ID",
     "staff_id", "Staff_ID", "Staff ID",
     "Сотрудник ID", "Доктор ID",
@@ -181,7 +181,7 @@ function parseKGLocalFrom(input: string | null | undefined): string {
   return digits.slice(-LOCAL_LEN);
 }
 
-function mapAnyToEmployee(o: Record<string, unknown>): EmployeeRow | null {
+function mapAnyToEmployee(o: Record<string, unknown>): EmployesRow | null {
   const id = getIdFrom(o);
   if (!id) return null;
   const full_name = getNameFrom(o) || id;
@@ -191,9 +191,9 @@ function mapAnyToEmployee(o: Record<string, unknown>): EmployeeRow | null {
 }
 
 // Deduplicate by 'id' (or by 'full_name' as fallback)
-function dedupeEmployees(arr: EmployeeRow[]): EmployeeRow[] {
+function dedupeEmployees(arr: EmployesRow[]): EmployesRow[] {
   const seen = new Set<string>();
-  const out: EmployeeRow[] = [];
+  const out: EmployesRow[] = [];
   for (const e of arr) {
     const key = e.id || e.full_name;
     if (!key || seen.has(key)) continue;
@@ -204,7 +204,7 @@ function dedupeEmployees(arr: EmployeeRow[]): EmployeeRow[] {
 }
 
 export const EmployeesPage: React.FC = () => {
-  const [items, setItems] = React.useState<EmployeeRow[]>([]);
+  const [items, setItems] = React.useState<EmployesRow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
 
@@ -212,9 +212,9 @@ export const EmployeesPage: React.FC = () => {
   const qDebounced = useDebounced(q, 300);
 
   const [addOpen, setAddOpen] = React.useState(false);
-  const [editOpen, setEditOpen] = React.useState<null | EmployeeRow>(null);
-  const [detailsOpen, setDetailsOpen] = React.useState<null | EmployeeRow>(null);
-  const [deleteOpen, setDeleteOpen] = React.useState<null | EmployeeRow>(null);
+  const [editOpen, setEditOpen] = React.useState<null | EmployesRow>(null);
+  const [detailsOpen, setDetailsOpen] = React.useState<null | EmployesRow>(null);
+  const [deleteOpen, setDeleteOpen] = React.useState<null | EmployesRow>(null);
 
   const ctrlRef = React.useRef<AbortController | null>(null);
 
@@ -239,9 +239,9 @@ export const EmployeesPage: React.FC = () => {
           .limit(2000)
           .abortSignal(ctrl.signal);
         const base = !error && Array.isArray(data) ? (data as unknown[]) : [];
-        let mapped: EmployeeRow[] = base
+        let mapped: EmployesRow[] = base
           .map((r) => (typeof r === "object" && r !== null ? mapAnyToEmployee(r as Record<string, unknown>) : null))
-          .filter((x): x is EmployeeRow => !!x);
+          .filter((x): x is EmployesRow => !!x);
         if (qDebounced.trim()) {
           const ql = qDebounced.toLowerCase();
           mapped = mapped.filter((e) => {
@@ -419,7 +419,7 @@ const DrawerBase: React.FC<DrawerBaseProps> = ({ open, title, onClose, children,
 type AddEmployeeDrawerProps = {
   open: boolean;
   onClose: () => void;
-  onCreated: (rec: EmployeeRow) => void;
+  onCreated: (rec: EmployesRow) => void;
 };
 
 const AddEmployeeDrawer: React.FC<AddEmployeeDrawerProps> = ({ open, onClose, onCreated }) => {
@@ -511,9 +511,9 @@ const AddEmployeeDrawer: React.FC<AddEmployeeDrawerProps> = ({ open, onClose, on
 };
 
 type EditEmployeeDrawerProps = {
-  record: EmployeeRow | null;
+  record: EmployesRow | null;
   onClose: () => void;
-  onUpdated: (rec: EmployeeRow) => void;
+  onUpdated: (rec: EmployesRow) => void;
 };
 
 const EditEmployeeDrawer: React.FC<EditEmployeeDrawerProps> = ({ record, onClose, onUpdated }) => {
@@ -605,7 +605,7 @@ const EditEmployeeDrawer: React.FC<EditEmployeeDrawerProps> = ({ record, onClose
 };
 
 type EmployeeDetailsDrawerProps = {
-  record: EmployeeRow | null;
+  record: EmployesRow | null;
   onClose: () => void;
 };
 
@@ -637,7 +637,7 @@ const Row: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value
 };
 
 type DeleteEmployeeDialogProps = {
-  record: EmployeeRow | null;
+  record: EmployesRow | null;
   onClose: () => void;
   onDeleted: (id: string) => void;
 };

@@ -33,11 +33,15 @@ const SERVICES_WRITE: string =
 
 export type CreatedService = {
   id?: string | number;
-  name: string;
-  price: number;
+  name: string; // Это то, что вы показываете в UI
+  price: number; // Это то, что вы показываете в UI
+  // НОВЫЕ ПОЛЯ, которые возвращает база
+  service_name: string;
+  price_som: number;
   employee_id: string | null;
   employee_name?: string | null;
-  photo?: string | null;
+  photo_url?: string | null;
+  // ...
 };
 
 type Props = {
@@ -117,7 +121,6 @@ const DrawerBase: React.FC<{
 const AddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) => {
   // Form state
   const [employeeId, setEmployeeId] = React.useState<string | null>(null);
-  const [employeeName, setEmployeeName] = React.useState<string | null>(null);
   const [selectedEmps, setSelectedEmps] = React.useState<EmployeesRow[]>([]);
   const [name, setName] = React.useState("");
   const [price, setPrice] = React.useState<string>("");
@@ -153,7 +156,6 @@ const AddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) => {
   React.useEffect(() => {
     if (!open) {
       setEmployeeId(null);
-      setEmployeeName(null);
       setSelectedEmps([]);
       setName("");
       setPrice("");
@@ -218,9 +220,7 @@ const AddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) => {
         return data as Record<string, unknown>;
       };
 
-      let inserted: Record<string, unknown> | null = await tryInsert(
-        primaryPayload
-      );
+      let inserted: Record<string, unknown> | null;
       try {
         inserted = await tryInsert(primaryPayload);
       } catch {
@@ -238,20 +238,42 @@ const AddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) => {
         id:
           (inserted?.["id"] as string | number | undefined) ??
           (inserted?.["ID"] as string | number | undefined),
+        // UI fields
         name:
           (inserted?.["name"] as string) ??
+          (inserted?.["service_name"] as string) ??
           (inserted?.["Название услуги"] as string) ??
           name.trim(),
         price:
+          typeof inserted?.["price"] === "number"
+            ? (inserted?.["price"] as number)
+            : typeof inserted?.["price_som"] === "number"
+            ? (inserted?.["price_som"] as number)
+            : typeof inserted?.["Стоимость, сом"] === "number"
+            ? (inserted?.["Стоимость, сом"] as number)
+            : Number(price),
+
+        // DB-returned fields
+        service_name:
+          (inserted?.["service_name"] as string) ??
+          (inserted?.["Название услуги"] as string) ??
+          name.trim(),
+        price_som:
           typeof inserted?.["price_som"] === "number"
             ? (inserted?.["price_som"] as number)
+            : typeof inserted?.["Стоимость, сом"] === "number"
+            ? (inserted?.["Стоимость, сом"] as number)
             : Number(price),
 
         employee_id:
           (inserted?.["employee_id"] as string | null) ?? employeeId ?? null,
-        employee_name: employeeName ?? null,
-        photo:
-          (inserted?.["photo"] as string | null) ??
+        employee_name:
+          (inserted?.["employee_name"] as string | null) ??
+          (selectedEmps && selectedEmps.length > 0
+            ? (selectedEmps[0]?.full_name ?? null)
+            : null),
+        photo_url:
+          (inserted?.["photo_url"] as string | null) ??
           (inserted?.["Картинка"] as string | null) ??
           photoUrl ??
           null,
@@ -297,7 +319,6 @@ const AddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) => {
                 setSelectedEmps(v ?? []);
                 const first = (v && v[0]) || null;
                 setEmployeeId(first?.id ?? null);
-                setEmployeeName(first?.full_name ?? null);
               }}
               renderOption={(props, option, { selected }) => (
                 <li {...props}>
