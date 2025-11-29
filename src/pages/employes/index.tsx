@@ -36,11 +36,16 @@ import { supabase } from "../../utility/supabaseClient";
  * Таблица: по умолчанию "employees". Можно переопределить через VITE_EMPLOYEES_TABLE
  */
 
-const importMetaEnv = ((import.meta as unknown) as { env?: Record<string, string | undefined> }).env || {};
+const importMetaEnv =
+  (import.meta as unknown as { env?: Record<string, string | undefined> })
+    .env || {};
 // Read source (view) and write (base table) can be different:
 // - VITE_EMPLOYEES_SOURCE or VITE_EMPLOYEES_TABLE for reading (fallback to EmployeesView)
 // - VITE_EMPLOYEES_WRITE_TABLE for writes (fallback to 'employees')
-const EMPLOYEES_SOURCE: string = importMetaEnv.VITE_EMPLOYEES_SOURCE || importMetaEnv.VITE_EMPLOYEES_TABLE || "EmployeesView";
+const EMPLOYEES_SOURCE: string =
+  importMetaEnv.VITE_EMPLOYEES_SOURCE ||
+  importMetaEnv.VITE_EMPLOYEES_TABLE ||
+  "EmployeesView";
 const EMPLOYEES_WRITE: string = "Employes";
 
 type EmployesRow = {
@@ -77,11 +82,19 @@ function isAbortError(e: unknown): boolean {
 function getIdFrom(o: Record<string, unknown>): string {
   // Common id fields across various views
   const idKeys = [
-    "id", "ID",
-    "employes_id", "Employes_ID", "Employes ID",
-    "doctor_id", "Doctor_ID", "Doctor ID",
-    "staff_id", "Staff_ID", "Staff ID",
-    "Сотрудник ID", "Доктор ID",
+    "id",
+    "ID",
+    "employes_id",
+    "Employes_ID",
+    "Employes ID",
+    "doctor_id",
+    "Doctor_ID",
+    "Doctor ID",
+    "staff_id",
+    "Staff_ID",
+    "Staff ID",
+    "Сотрудник ID",
+    "Доктор ID",
   ];
   for (const k of idKeys) {
     const v = o[k as keyof typeof o];
@@ -101,8 +114,17 @@ function getIdFrom(o: Record<string, unknown>): string {
 
 function getNameFrom(o: Record<string, unknown>): string {
   const directKeys = [
-    "full_name", "fullName", "name", "fio", "ФИО сотрудников", "ФИО",
-    "doctor_name", "employee_name", "Сотрудник", "Доктор ФИО", "Доктор",
+    "full_name",
+    "fullName",
+    "name",
+    "fio",
+    "ФИО сотрудников",
+    "ФИО",
+    "doctor_name",
+    "employee_name",
+    "Сотрудник",
+    "Доктор ФИО",
+    "Доктор",
   ];
   const vals: string[] = [];
 
@@ -112,14 +134,18 @@ function getNameFrom(o: Record<string, unknown>): string {
   }
   for (const k of Object.keys(o)) {
     const v = o[k];
-    if (typeof v === "string" && /(name|fio|фио|сотрудник|доктор)/i.test(k) && v.trim().length > 0) {
+    if (
+      typeof v === "string" &&
+      /(name|fio|фио|сотрудник|доктор)/i.test(k) &&
+      v.trim().length > 0
+    ) {
       vals.push(v.trim());
     }
   }
   const fa = o["first_name"];
   const fb = o["last_name"];
   const combined = `${typeof fa === "string" ? fa.trim() : ""}${
-    (typeof fa === "string" && fa && typeof fb === "string" && fb) ? " " : ""
+    typeof fa === "string" && fa && typeof fb === "string" && fb ? " " : ""
   }${typeof fb === "string" ? fb.trim() : ""}`.trim();
 
   const candidate = vals.concat(combined).find((s) => s.length > 0);
@@ -134,7 +160,11 @@ function getPhoneFrom(o: Record<string, unknown>): string | null {
   }
   for (const k of Object.keys(o)) {
     const v = o[k];
-    if (typeof v === "string" && /(phone|телефон|mobile)/i.test(k) && v.trim().length > 0) {
+    if (
+      typeof v === "string" &&
+      /(phone|телефон|mobile)/i.test(k) &&
+      v.trim().length > 0
+    ) {
       return v.trim();
     }
   }
@@ -213,7 +243,9 @@ export const EmployeesPage: React.FC = () => {
 
   const [addOpen, setAddOpen] = React.useState(false);
   const [editOpen, setEditOpen] = React.useState<null | EmployesRow>(null);
-  const [detailsOpen, setDetailsOpen] = React.useState<null | EmployesRow>(null);
+  const [detailsOpen, setDetailsOpen] = React.useState<null | EmployesRow>(
+    null
+  );
   const [deleteOpen, setDeleteOpen] = React.useState<null | EmployesRow>(null);
 
   const ctrlRef = React.useRef<AbortController | null>(null);
@@ -240,7 +272,11 @@ export const EmployeesPage: React.FC = () => {
           .abortSignal(ctrl.signal);
         const base = !error && Array.isArray(data) ? (data as unknown[]) : [];
         let mapped: EmployesRow[] = base
-          .map((r) => (typeof r === "object" && r !== null ? mapAnyToEmployee(r as Record<string, unknown>) : null))
+          .map((r) =>
+            typeof r === "object" && r !== null
+              ? mapAnyToEmployee(r as Record<string, unknown>)
+              : null
+          )
           .filter((x): x is EmployesRow => !!x);
         if (qDebounced.trim()) {
           const ql = qDebounced.toLowerCase();
@@ -281,16 +317,28 @@ export const EmployeesPage: React.FC = () => {
 
   return (
     <Box px={2} py={2}>
-      <Stack direction={{ xs: "column", sm: "row" }} alignItems={{ xs: "stretch", sm: "center" }} justifyContent="space-between" spacing={1.5} mb={2}>
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        alignItems={{ xs: "stretch", sm: "center" }}
+        justifyContent="space-between"
+        spacing={1.5}
+        mb={2}
+      >
         <Typography variant="h5">Сотрудники</Typography>
         <Stack direction="row" spacing={1} alignItems="center">
           <TextField
             size="small"
             placeholder="Поиск по имени, телефону, роли"
             value={q}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQ(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+              setQ(e.target.value)
+            }
           />
-          <Button variant="contained" startIcon={<AddOutlined />} onClick={() => setAddOpen(true)}>
+          <Button
+            variant="contained"
+            startIcon={<AddOutlined />}
+            onClick={() => setAddOpen(true)}
+          >
             Добавить
           </Button>
         </Stack>
@@ -309,30 +357,61 @@ export const EmployeesPage: React.FC = () => {
       ) : (
         <List sx={{ py: 0 }}>
           {filtered.map((e) => (
-            <ListItem key={e.id} disableGutters divider sx={{ alignItems: "flex-start" }} secondaryAction={
-              <Stack direction="row" spacing={1}>
-                <IconButton aria-label="Подробнее" onClick={() => setDetailsOpen(e)}>
-                  <InfoOutlined />
-                </IconButton>
-                <IconButton aria-label="Редактировать" onClick={() => setEditOpen(e)}>
-                  <EditOutlined />
-                </IconButton>
-                <IconButton aria-label="Удалить" onClick={() => setDeleteOpen(e)}>
-                  <DeleteOutline />
-                </IconButton>
-              </Stack>
-            }>
+            <ListItem
+              key={e.id}
+              disableGutters
+              divider
+              sx={{ alignItems: "flex-start" }}
+              secondaryAction={
+                <Stack direction="row" spacing={1}>
+                  <IconButton
+                    aria-label="Подробнее"
+                    onClick={() => setDetailsOpen(e)}
+                  >
+                    <InfoOutlined />
+                  </IconButton>
+                  <IconButton
+                    aria-label="Редактировать"
+                    onClick={() => setEditOpen(e)}
+                  >
+                    <EditOutlined />
+                  </IconButton>
+                  <IconButton
+                    aria-label="Удалить"
+                    onClick={() => setDeleteOpen(e)}
+                  >
+                    <DeleteOutline />
+                  </IconButton>
+                </Stack>
+              }
+            >
               <ListItemText
                 sx={{ minWidth: 0, pr: 1 }}
-                primaryTypographyProps={{ sx: { whiteSpace: "normal", wordBreak: "break-word" } }}
+                primaryTypographyProps={{
+                  sx: { whiteSpace: "normal", wordBreak: "break-word" },
+                }}
                 secondaryTypographyProps={{ component: "div" }}
                 primary={e.full_name || e.id}
                 secondary={
                   <Stack direction="column" spacing={0.5} sx={{ minWidth: 0 }}>
-                    <Typography variant="body2" component="div" sx={{ wordBreak: "break-word" }}>
-                      {e.role ? (e.role === "doctor" ? "Доктор" : e.role === "admin" ? "Администратор" : e.role) : "—"}
+                    <Typography
+                      variant="body2"
+                      component="div"
+                      sx={{ wordBreak: "break-word" }}
+                    >
+                      {e.role
+                        ? e.role === "doctor"
+                          ? "Доктор"
+                          : e.role === "admin"
+                          ? "Администратор"
+                          : e.role
+                        : "—"}
                     </Typography>
-                    <Typography variant="body2" component="div" sx={{ wordBreak: "break-word" }}>
+                    <Typography
+                      variant="body2"
+                      component="div"
+                      sx={{ wordBreak: "break-word" }}
+                    >
                       {e.phone ?? "—"}
                     </Typography>
                   </Stack>
@@ -353,10 +432,15 @@ export const EmployeesPage: React.FC = () => {
       <EditEmployeeDrawer
         record={editOpen}
         onClose={() => setEditOpen(null)}
-        onUpdated={(rec) => setItems((pr) => pr.map((x) => (x.id === rec.id ? rec : x)))}
+        onUpdated={(rec) =>
+          setItems((pr) => pr.map((x) => (x.id === rec.id ? rec : x)))
+        }
       />
 
-      <EmployeeDetailsDrawer record={detailsOpen} onClose={() => setDetailsOpen(null)} />
+      <EmployeeDetailsDrawer
+        record={detailsOpen}
+        onClose={() => setDetailsOpen(null)}
+      />
 
       <DeleteEmployeeDialog
         record={deleteOpen}
@@ -383,18 +467,37 @@ type DrawerBaseProps = {
   submitDisabled?: boolean;
 };
 
-const DrawerBase: React.FC<DrawerBaseProps> = ({ open, title, onClose, children, busy, onSubmit, submitLabel = "Сохранить", submitDisabled }) => {
+const DrawerBase: React.FC<DrawerBaseProps> = ({
+  open,
+  title,
+  onClose,
+  children,
+  busy,
+  onSubmit,
+  submitLabel = "Сохранить",
+  submitDisabled,
+}) => {
   return (
     <Drawer
       anchor="right"
       open={open}
       onClose={busy ? undefined : onClose}
-      PaperProps={{ sx: { width: { xs: "100%", sm: 420, md: "36vw" }, maxWidth: "100vw" } }}
+      PaperProps={{
+        sx: { width: { xs: "100%", sm: 420, md: "36vw" }, maxWidth: "100vw" },
+      }}
     >
       <Box sx={{ width: 1, minWidth: 0 }}>
-        <Stack direction="row" alignItems="center" justifyContent="space-between" px={2} py={1.5}>
+        <Stack
+          direction="row"
+          alignItems="center"
+          justifyContent="space-between"
+          px={2}
+          py={1.5}
+        >
           <Typography variant="h6">{title}</Typography>
-          <IconButton onClick={busy ? undefined : onClose}><CloseOutlined /></IconButton>
+          <IconButton onClick={busy ? undefined : onClose}>
+            <CloseOutlined />
+          </IconButton>
         </Stack>
         <Divider />
         <Box px={2} py={2}>
@@ -402,12 +505,23 @@ const DrawerBase: React.FC<DrawerBaseProps> = ({ open, title, onClose, children,
         </Box>
         <Divider />
         <Box px={2} py={1.5} display="flex" justifyContent="flex-end" gap={1.5}>
-          <Button onClick={onClose} disabled={busy}>Отмена</Button>
+          <Button onClick={onClose} disabled={busy}>
+            Отмена
+          </Button>
           {onSubmit && (
-            <Button onClick={onSubmit} variant="contained" disabled={busy || submitDisabled}>
+            <Button
+              onClick={onSubmit}
+              variant="contained"
+              disabled={busy || submitDisabled}
+            >
               {busy ? (
-                <Stack direction="row" alignItems="center" spacing={1}><CircularProgress size={18} /><span>Сохранение…</span></Stack>
-              ) : submitLabel}
+                <Stack direction="row" alignItems="center" spacing={1}>
+                  <CircularProgress size={18} />
+                  <span>Сохранение…</span>
+                </Stack>
+              ) : (
+                submitLabel
+              )}
             </Button>
           )}
         </Box>
@@ -422,7 +536,11 @@ type AddEmployeeDrawerProps = {
   onCreated: (rec: EmployesRow) => void;
 };
 
-const AddEmployeeDrawer: React.FC<AddEmployeeDrawerProps> = ({ open, onClose, onCreated }) => {
+const AddEmployeeDrawer: React.FC<AddEmployeeDrawerProps> = ({
+  open,
+  onClose,
+  onCreated,
+}) => {
   const [fullName, setFullName] = React.useState("");
   const [phone, setPhone] = React.useState("");
   const [phoneError, setPhoneError] = React.useState(false);
@@ -447,30 +565,49 @@ const AddEmployeeDrawer: React.FC<AddEmployeeDrawerProps> = ({ open, onClose, on
       setBusy(true);
       // Пытаемся вставить универсальные поля; если схема другая — может потребоваться адаптация колонок
       const payload: Record<string, unknown> = {
-        full_name: fullName.trim(),
-        phone: composeKGPhone(phone),
-        role: role || null,
+        "ФИО сотрудников": fullName.trim(),
+        "Телефон": composeKGPhone(phone),
+        "Тип сотрудника": role || null,
       };
-      const { data, error } = await supabase.from(EMPLOYEES_WRITE).insert(payload).select("*").single();
+      const { data, error } = await supabase
+        .from(EMPLOYEES_WRITE)
+        .insert(payload)
+        .select("*")
+        .single();
       if (error) throw error;
-      const mapped = data && typeof data === "object" ? mapAnyToEmployee(data as Record<string, unknown>) : null;
+      const mapped =
+        data && typeof data === "object"
+          ? mapAnyToEmployee(data as Record<string, unknown>)
+          : null;
       if (mapped) onCreated(mapped);
       onClose();
     } catch (e) {
       console.error("Add employee failed:", e);
-      alert("Не удалось создать сотрудника. Проверьте схему таблицы или переменную VITE_EMPLOYEES_TABLE.");
+      alert(
+        "Не удалось создать сотрудника. Проверьте схему таблицы или переменную VITE_EMPLOYEES_TABLE."
+      );
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <DrawerBase open={open} title="Новый сотрудник" onClose={onClose} busy={busy} onSubmit={handleSubmit} submitLabel="Создать" submitDisabled={phone.trim().length > 0 && phoneError}>
+    <DrawerBase
+      open={open}
+      title="Новый сотрудник"
+      onClose={onClose}
+      busy={busy}
+      onSubmit={handleSubmit}
+      submitLabel="Создать"
+      submitDisabled={phone.trim().length > 0 && phoneError}
+    >
       <Stack spacing={2}>
         <TextField
           label="ФИО"
           value={fullName}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFullName(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+            setFullName(e.target.value)
+          }
           required
           fullWidth
         />
@@ -490,19 +627,27 @@ const AddEmployeeDrawer: React.FC<AddEmployeeDrawerProps> = ({ open, onClose, on
               : "Формат: +996 XXX XXX XXX"
           }
           fullWidth
-          InputProps={{ startAdornment: <InputAdornment position="start">🇰🇬 {PHONE_CC}</InputAdornment> }}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">🇰🇬 {PHONE_CC}</InputAdornment>
+            ),
+          }}
           inputProps={{ inputMode: "tel", pattern: "[0-9]*", maxLength: 9 }}
         />
         <TextField
           label="Роль"
           select
           value={role}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRole((e.target.value as "doctor" | "admin" | ""))}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+            setRole(e.target.value as "doctor" | "admin" | "")
+          }
           fullWidth
         >
           <MenuItem value="">—</MenuItem>
           {roleOptions.map((o) => (
-            <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>
+            <MenuItem key={o.value} value={o.value}>
+              {o.label}
+            </MenuItem>
           ))}
         </TextField>
       </Stack>
@@ -516,7 +661,11 @@ type EditEmployeeDrawerProps = {
   onUpdated: (rec: EmployesRow) => void;
 };
 
-const EditEmployeeDrawer: React.FC<EditEmployeeDrawerProps> = ({ record, onClose, onUpdated }) => {
+const EditEmployeeDrawer: React.FC<EditEmployeeDrawerProps> = ({
+  record,
+  onClose,
+  onUpdated,
+}) => {
   const open = Boolean(record);
   const [fullName, setFullName] = React.useState("");
   const [phone, setPhone] = React.useState("");
@@ -528,7 +677,9 @@ const EditEmployeeDrawer: React.FC<EditEmployeeDrawerProps> = ({ record, onClose
     if (record) {
       setFullName(record.full_name || "");
       setPhone(parseKGLocalFrom(record.phone ?? ""));
-      setRole((record.role === "doctor" || record.role === "admin") ? record.role : "");
+      setRole(
+        record.role === "doctor" || record.role === "admin" ? record.role : ""
+      );
       setBusy(false);
     }
   }, [record]);
@@ -542,9 +693,9 @@ const EditEmployeeDrawer: React.FC<EditEmployeeDrawerProps> = ({ record, onClose
     try {
       setBusy(true);
       const payload: Record<string, unknown> = {
-        full_name: fullName.trim(),
-        phone: composeKGPhone(phone),
-        role: role || null,
+        "ФИО сотрудников": fullName.trim(),
+        Телефон: composeKGPhone(phone),
+        "Тип сотрудника": role || null,
       };
       const { data, error } = await supabase
         .from(EMPLOYEES_WRITE)
@@ -553,7 +704,10 @@ const EditEmployeeDrawer: React.FC<EditEmployeeDrawerProps> = ({ record, onClose
         .select("*")
         .single();
       if (error) throw error;
-      const mapped = data && typeof data === "object" ? mapAnyToEmployee(data as Record<string, unknown>) : null;
+      const mapped =
+        data && typeof data === "object"
+          ? mapAnyToEmployee(data as Record<string, unknown>)
+          : null;
       if (mapped) onUpdated(mapped);
       onClose();
     } catch (e) {
@@ -565,9 +719,25 @@ const EditEmployeeDrawer: React.FC<EditEmployeeDrawerProps> = ({ record, onClose
   };
 
   return (
-    <DrawerBase open={open} title="Редактирование" onClose={onClose} busy={busy} onSubmit={handleSubmit} submitLabel="Сохранить" submitDisabled={phone.trim().length > 0 && phoneError}>
+    <DrawerBase
+      open={open}
+      title="Редактирование"
+      onClose={onClose}
+      busy={busy}
+      onSubmit={handleSubmit}
+      submitLabel="Сохранить"
+      submitDisabled={phone.trim().length > 0 && phoneError}
+    >
       <Stack spacing={2}>
-        <TextField label="ФИО" value={fullName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFullName(e.target.value)} required fullWidth />
+        <TextField
+          label="ФИО"
+          value={fullName}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+            setFullName(e.target.value)
+          }
+          required
+          fullWidth
+        />
         <TextField
           label="Телефон"
           value={phone}
@@ -584,19 +754,27 @@ const EditEmployeeDrawer: React.FC<EditEmployeeDrawerProps> = ({ record, onClose
               : "Формат: +996 XXX XXX XXX"
           }
           fullWidth
-          InputProps={{ startAdornment: <InputAdornment position="start">🇰🇬 {PHONE_CC}</InputAdornment> }}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">🇰🇬 {PHONE_CC}</InputAdornment>
+            ),
+          }}
           inputProps={{ inputMode: "tel", pattern: "[0-9]*", maxLength: 9 }}
         />
         <TextField
           label="Роль"
           select
           value={role}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRole((e.target.value as "doctor" | "admin" | ""))}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+            setRole(e.target.value as "doctor" | "admin" | "")
+          }
           fullWidth
         >
           <MenuItem value="">—</MenuItem>
           {roleOptions.map((o) => (
-            <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>
+            <MenuItem key={o.value} value={o.value}>
+              {o.label}
+            </MenuItem>
           ))}
         </TextField>
       </Stack>
@@ -609,7 +787,10 @@ type EmployeeDetailsDrawerProps = {
   onClose: () => void;
 };
 
-const EmployeeDetailsDrawer: React.FC<EmployeeDetailsDrawerProps> = ({ record, onClose }) => {
+const EmployeeDetailsDrawer: React.FC<EmployeeDetailsDrawerProps> = ({
+  record,
+  onClose,
+}) => {
   const open = Boolean(record);
   const rec = record;
 
@@ -620,17 +801,33 @@ const EmployeeDetailsDrawer: React.FC<EmployeeDetailsDrawerProps> = ({ record, o
           <Row label="ID" value={rec.id} />
           <Row label="ФИО" value={rec.full_name} />
           <Row label="Телефон" value={rec.phone ?? "—"} />
-          <Row label="Роль" value={rec.role ? (rec.role === "doctor" ? "Доктор" : rec.role === "admin" ? "Администратор" : rec.role) : "—"} />
+          <Row
+            label="Роль"
+            value={
+              rec.role
+                ? rec.role === "doctor"
+                  ? "Доктор"
+                  : rec.role === "admin"
+                  ? "Администратор"
+                  : rec.role
+                : "—"
+            }
+          />
         </Stack>
       )}
     </DrawerBase>
   );
 };
 
-const Row: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => {
+const Row: React.FC<{ label: string; value: React.ReactNode }> = ({
+  label,
+  value,
+}) => {
   return (
     <Stack direction="row" spacing={1}>
-      <Typography variant="body2" color="text.secondary" sx={{ minWidth: 120 }}>{label}</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ minWidth: 120 }}>
+        {label}
+      </Typography>
       <Typography variant="body2">{value}</Typography>
     </Stack>
   );
@@ -642,7 +839,11 @@ type DeleteEmployeeDialogProps = {
   onDeleted: (id: string) => void;
 };
 
-const DeleteEmployeeDialog: React.FC<DeleteEmployeeDialogProps> = ({ record, onClose, onDeleted }) => {
+const DeleteEmployeeDialog: React.FC<DeleteEmployeeDialogProps> = ({
+  record,
+  onClose,
+  onDeleted,
+}) => {
   const open = Boolean(record);
   const [busy, setBusy] = React.useState(false);
 
@@ -654,7 +855,10 @@ const DeleteEmployeeDialog: React.FC<DeleteEmployeeDialogProps> = ({ record, onC
     if (!record) return;
     try {
       setBusy(true);
-      const { error } = await supabase.from(EMPLOYEES_WRITE).delete().eq("id", record.id);
+      const { error } = await supabase
+        .from(EMPLOYEES_WRITE)
+        .delete()
+        .eq("id", record.id);
       if (error) throw error;
       onDeleted(record.id);
       onClose();
@@ -667,7 +871,12 @@ const DeleteEmployeeDialog: React.FC<DeleteEmployeeDialogProps> = ({ record, onC
   };
 
   return (
-    <Dialog open={open} onClose={busy ? undefined : onClose} fullWidth maxWidth="xs">
+    <Dialog
+      open={open}
+      onClose={busy ? undefined : onClose}
+      fullWidth
+      maxWidth="xs"
+    >
       <DialogTitle>Удалить сотрудника</DialogTitle>
       <DialogContent>
         <Typography variant="body2">
@@ -675,8 +884,15 @@ const DeleteEmployeeDialog: React.FC<DeleteEmployeeDialogProps> = ({ record, onC
         </Typography>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={busy}>Отмена</Button>
-        <Button onClick={handleDelete} color="error" variant="contained" disabled={busy}>
+        <Button onClick={onClose} disabled={busy}>
+          Отмена
+        </Button>
+        <Button
+          onClick={handleDelete}
+          color="error"
+          variant="contained"
+          disabled={busy}
+        >
           {busy ? <CircularProgress size={18} /> : "Удалить"}
         </Button>
       </DialogActions>
