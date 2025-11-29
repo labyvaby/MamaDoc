@@ -73,7 +73,7 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
     }
   };
 
-  function setQuery(value: string): void {
+  function setQuery(): void {
     throw new Error("Function not implemented.");
   }
 
@@ -129,7 +129,7 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
                   </InputAdornment>
                 ),
               }}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={setQuery}
               sx={{ width: { xs: 1, md: 260 } }}
             />
           </Stack>

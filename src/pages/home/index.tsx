@@ -162,6 +162,14 @@ export const HomePage: React.FC = () => {
     "any" | "cash" | "cashless"
   >("any");
 
+  // Add appointment drawer state
+  const [visitOpen, setVisitOpen] = React.useState(false);
+  const [visitPatientId, setVisitPatientId] = React.useState("");
+  const [visitDateTime, setVisitDateTime] = React.useState("");
+  const [visitDoctor, setVisitDoctor] = React.useState("");
+  const [visitService, setVisitService] = React.useState("");
+  const [visitPrice, setVisitPrice] = React.useState<number | "">("");
+
   // Services state
   const [servicesRowsAll, setServicesRowsAll] = React.useState<
     Array<Record<string, unknown>>
@@ -353,6 +361,7 @@ export const HomePage: React.FC = () => {
             <Button
               variant="contained"
               fullWidth
+              onClick={() => setVisitOpen(true)}
               sx={{
                 width: 1,
                 display: "flex",
@@ -514,6 +523,149 @@ export const HomePage: React.FC = () => {
           </Card>
         </Grid>
       </Grid>
+
+      {/* Add Appointment Drawer (right) */}
+      <Drawer
+        anchor="right"
+        open={visitOpen}
+        onClose={() => setVisitOpen(false)}
+        PaperProps={{
+          sx: {
+            width: { xs: 320, sm: 420 },
+            zIndex: (theme) => theme.zIndex.drawer + 10,
+          },
+        }}
+        ModalProps={{
+          slotProps: {
+            backdrop: {
+              sx: {
+                zIndex: (theme) => theme.zIndex.appBar - 1,
+              },
+            },
+          },
+        }}
+      >
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            px: 2,
+            py: 1,
+          }}
+        >
+          <Typography variant="h6">Добавить прием</Typography>
+          <IconButton onClick={() => setVisitOpen(false)}>
+            <CloseOutlined />
+          </IconButton>
+        </Box>
+        <Divider />
+        <Stack spacing={2} sx={{ p: 2 }}>
+          <TextField
+            label="Пациент ID"
+            value={visitPatientId}
+            onChange={(e) => setVisitPatientId(e.target.value)}
+            fullWidth
+          />
+          <TextField
+            label="Дата и время"
+            type="datetime-local"
+            value={visitDateTime}
+            onChange={(e) => setVisitDateTime(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            fullWidth
+          />
+          <TextField
+            label="Доктор (ФИО или ID)"
+            value={visitDoctor}
+            onChange={(e) => setVisitDoctor(e.target.value)}
+            fullWidth
+          />
+          <TextField
+            label="Услуга (ID или название)"
+            value={visitService}
+            onChange={(e) => setVisitService(e.target.value)}
+            fullWidth
+          />
+          <TextField
+            label="Стоимость"
+            type="number"
+            value={visitPrice}
+            onChange={(e) =>
+              setVisitPrice(e.target.value === "" ? "" : Number(e.target.value))
+            }
+            fullWidth
+          />
+          <Stack direction="row" gap={1}>
+            <Button
+              variant="contained"
+              onClick={async () => {
+                try {
+                  if (!visitPatientId || !visitDateTime) return;
+
+                  const payloadCandidates: Array<Record<string, unknown>> = [
+                    {
+                      "Пациент ID": visitPatientId,
+                      "Дата и время": visitDateTime.replace("T", " "),
+                      Статус: "Ожидаем",
+                      "Доктор ФИО": visitDoctor || null,
+                      "Услуга ID": visitService || null,
+                      Стоимость: visitPrice ? Number(visitPrice) : null,
+                    },
+                    {
+                      "Пациент ID": visitPatientId,
+                      Дата: visitDateTime.split("T")[0],
+                      Статус: "Ожидаем",
+                      Доктор: visitDoctor || null,
+                      Услуга: visitService || null,
+                      Стоимость: visitPrice ? Number(visitPrice) : null,
+                    },
+                  ];
+
+                  let success = false;
+                  let lastErr: unknown = null;
+                  for (const tableName of ["Appointments", "appointments"]) {
+                    for (const payload of payloadCandidates) {
+                      const { error } = await supabase
+                        .schema("public")
+                        .from(tableName)
+                        .insert(payload as Record<string, unknown>);
+                      if (!error) {
+                        success = true;
+                        lastErr = null;
+                        break;
+                      }
+                      lastErr = error ?? lastErr;
+                    }
+                    if (success) break;
+                  }
+                  if (!success && lastErr) throw lastErr;
+
+                  // Reset form and close
+                  setVisitOpen(false);
+                  setVisitPatientId("");
+                  setVisitDateTime("");
+                  setVisitDoctor("");
+                  setVisitService("");
+                  setVisitPrice("");
+
+                  // Optionally trigger refresh
+                  // set a no-op to re-render
+                  setAll((prev) => [...prev]);
+                } catch (e) {
+                  console.error(e);
+                  alert("Не удалось создать прием");
+                }
+              }}
+            >
+              Сохранить
+            </Button>
+            <Button variant="text" onClick={() => setVisitOpen(false)}>
+              Отмена
+            </Button>
+          </Stack>
+        </Stack>
+      </Drawer>
 
       {/* Filters Drawer (right) */}
       <Drawer
