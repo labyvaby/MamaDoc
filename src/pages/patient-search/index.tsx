@@ -1,7 +1,6 @@
 import React from "react";
 import {
   Box,
-  Breadcrumbs,
   Button,
   Card,
   CardHeader,
@@ -9,7 +8,6 @@ import {
   Chip,
   Divider,
   Grid,
-  Link,
   List,
   ListItemButton,
   ListItemText,
@@ -20,19 +18,15 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  Tabs,
-  Tab,
 } from "@mui/material";
 import InputAdornment from "@mui/material/InputAdornment";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import PersonAddAltOutlined from "@mui/icons-material/PersonAddAltOutlined";
-import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
 import LocalPhoneOutlined from "@mui/icons-material/LocalPhoneOutlined";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
 import NotesOutlined from "@mui/icons-material/NotesOutlined";
-import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
 import Avatar from "@mui/material/Avatar";
 import Pagination from "@mui/material/Pagination";
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -65,9 +59,7 @@ type HistoryRow = {
   "Комментарий администратора"?: string;
 };
 
-const PATIENTS_CACHE_KEY = "patientSearch.patients.v1";
 const HISTORY_CACHE_PREFIX = "patientSearch.history.v1.";
-const PATIENTS_SRC_KEY = "patientSearch.src.v1";
 
 const PER_PAGE = 40;
 
@@ -153,7 +145,11 @@ function isAbortError(e: unknown): boolean {
     const msg = String(any.message ?? "");
     if (name === "AbortError") return true;
     if (code === "ABORT_ERR" || code === "20") return true;
-    if (msg.toLowerCase().includes("aborted") || msg.toLowerCase().includes("abort")) return true;
+    if (
+      msg.toLowerCase().includes("aborted") ||
+      msg.toLowerCase().includes("abort")
+    )
+      return true;
   } else if (typeof e === "string") {
     const s = e.toLowerCase();
     if (s.includes("abort")) return true;
@@ -192,7 +188,7 @@ export const PatientSearchPage: React.FC = () => {
   const fullScreen = useMediaQuery(theme.breakpoints.down("sm"));
 
   // Вкладки: 0 - Пациенты, 1 - История, 2 - Карточка
-  const [activeTab, setActiveTab] = React.useState<number>(0);
+  // const [activeTab, setActiveTab] = React.useState<number>(0);
 
   // Постраничная подгрузка пациентов (не загружаем всё сразу)
   const [page, setPage] = React.useState(1);
@@ -206,32 +202,9 @@ export const PatientSearchPage: React.FC = () => {
   // Reload tick to re-run initial effect when user clicks "Обновить"
   // legacy pagination removed
 
-  const handleManualRefresh = React.useCallback(() => {
-    try {
-      localStorage.removeItem(PATIENTS_CACHE_KEY);
-      localStorage.removeItem(PATIENTS_SRC_KEY);
-      if (selected) {
-        try {
-          localStorage.removeItem(HISTORY_CACHE_PREFIX + selected.id);
-        } catch {
-          void 0;
-        }
-      }
-    } catch {
-      void 0;
-    }
-    // reset local state and re-run effect
-    setSelected(null);
-    setPatients([]);
-    setHistory([]);
-    setQuery("");
-    setPage(1);
-    setTotal(0);
-  }, [selected]);
-
   // Fetch patients from Supabase (server pagination)
   React.useEffect(() => {
-    if (activeTab !== 0 || isSearching) return;
+    if (isSearching) return;
     const prevCtrl = patientsCtrlRef.current;
     if (prevCtrl) {
       prevCtrl.abort();
@@ -285,14 +258,18 @@ export const PatientSearchPage: React.FC = () => {
 
         if (ctrl.signal.aborted) return;
         setPatients(mapped);
-        if (!selected && mapped.length > 0) setSelected(mapped[0]);
       } catch (e: unknown) {
         if (isAbortError(e)) {
           return;
         }
         console.error(e);
-        const errObj = (typeof e === "object" && e !== null ? e : {}) as { message?: string };
-        setErrorMsg(errObj.message ?? (typeof e === "object" ? JSON.stringify(e) : String(e)));
+        const errObj = (typeof e === "object" && e !== null ? e : {}) as {
+          message?: string;
+        };
+        setErrorMsg(
+          errObj.message ??
+            (typeof e === "object" ? JSON.stringify(e) : String(e))
+        );
       } finally {
         setLoading(false);
       }
@@ -302,7 +279,7 @@ export const PatientSearchPage: React.FC = () => {
         patientsCtrlRef.current.abort();
       }
     };
-  }, [activeTab, page, isSearching]);
+  }, [page, isSearching]);
 
   // Сбрасываем страницу при изменении поискового запроса
   React.useEffect(() => {
@@ -311,7 +288,6 @@ export const PatientSearchPage: React.FC = () => {
 
   // Глобальный поиск по БД c серверной пагинацией
   React.useEffect(() => {
-    if (activeTab !== 0) return;
     const q = debouncedQuery.trim();
     if (!q) return;
 
@@ -352,18 +328,33 @@ export const PatientSearchPage: React.FC = () => {
         if (!res.error && Array.isArray(res.data) && res.data.length === 0) {
           try {
             const [fioRes, phoneRes] = await Promise.all([
-              supabase.from("Patients").select("*", { count: "exact" }).ilike("ФИО пациента", patt).range(from, to).abortSignal(ctrl.signal),
-              supabase.from("Patients").select("*", { count: "exact" }).ilike("Телефон", patt).range(from, to).abortSignal(ctrl.signal),
+              supabase
+                .from("Patients")
+                .select("*", { count: "exact" })
+                .ilike("ФИО пациента", patt)
+                .range(from, to)
+                .abortSignal(ctrl.signal),
+              supabase
+                .from("Patients")
+                .select("*", { count: "exact" })
+                .ilike("Телефон", patt)
+                .range(from, to)
+                .abortSignal(ctrl.signal),
             ]);
             if (!fioRes.error || !phoneRes.error) {
               const fioData = Array.isArray(fioRes.data) ? fioRes.data : [];
-              const phoneData = Array.isArray(phoneRes.data) ? phoneRes.data : [];
+              const phoneData = Array.isArray(phoneRes.data)
+                ? phoneRes.data
+                : [];
               const merged = [...fioData, ...phoneData];
               // mimic shape of res
               res = {
                 data: merged,
                 error: null,
-                count: (fioRes as unknown as { count?: number }).count ?? (phoneRes as unknown as { count?: number }).count ?? merged.length,
+                count:
+                  (fioRes as unknown as { count?: number }).count ??
+                  (phoneRes as unknown as { count?: number }).count ??
+                  merged.length,
               } as unknown as typeof res;
             }
           } catch {
@@ -395,14 +386,18 @@ export const PatientSearchPage: React.FC = () => {
 
         if (ctrl.signal.aborted) return;
         setPatients(mapped);
-        if (!selected && mapped.length > 0) setSelected(mapped[0]);
       } catch (e: unknown) {
         if (isAbortError(e)) {
           return;
         }
         console.error(e);
-        const errObj = (typeof e === "object" && e !== null ? e : {}) as { message?: string };
-        setErrorMsg(errObj.message ?? (typeof e === "object" ? JSON.stringify(e) : String(e)));
+        const errObj = (typeof e === "object" && e !== null ? e : {}) as {
+          message?: string;
+        };
+        setErrorMsg(
+          errObj.message ??
+            (typeof e === "object" ? JSON.stringify(e) : String(e))
+        );
       } finally {
         setLoading(false);
       }
@@ -412,7 +407,7 @@ export const PatientSearchPage: React.FC = () => {
         searchCtrlRef.current.abort();
       }
     };
-  }, [activeTab, debouncedQuery, page]);
+  }, [debouncedQuery, page]);
 
   // Fetch history when selected patient changes
   React.useEffect(() => {
@@ -424,7 +419,7 @@ export const PatientSearchPage: React.FC = () => {
     historyCtrlRef.current = ctrl;
     (async () => {
       try {
-        if (!selected || !(activeTab === 1 || activeTab === 2)) return;
+        if (!selected) return;
         setHistoryLoading(true);
         setHistoryError(null);
 
@@ -587,7 +582,7 @@ export const PatientSearchPage: React.FC = () => {
         historyCtrlRef.current.abort();
       }
     };
-  }, [selected, activeTab]);
+  }, [selected]);
 
   const filteredPatients = React.useMemo(() => {
     // Серверный поиск — клиентская фильтрация не требуется
@@ -693,11 +688,7 @@ export const PatientSearchPage: React.FC = () => {
             return a.fio.localeCompare(b.fio, "ru");
           });
           setPatients(list);
-          const sel =
-            insertedId && list.find((p) => p.id === insertedId)
-              ? list.find((p) => p.id === insertedId)!
-              : list[0] ?? null;
-          setSelected(sel);
+          setSelected(null);
         } catch (e) {
           console.error(e);
         } finally {
@@ -797,64 +788,33 @@ export const PatientSearchPage: React.FC = () => {
 
   return (
     <Box>
-      <SubHeader 
+      <SubHeader
         title="Поиск пациента"
         actions={
-          <Stack direction="row" gap={1} sx={{flexWrap: 'wrap'}}>
+          <Stack direction="row" gap={1} sx={{ flexWrap: "wrap" }}></Stack>
+        }
+      />
+
+      <Box sx={{ px: 2, py: 2 }}>
+        <Grid container spacing={2}>
+          {/* Left column: Patients */}
+          <Grid item xs={12} md={4}>
             <Button
               variant="contained"
               startIcon={<PersonAddAltOutlined />}
               onClick={() => setAddOpen(true)}
+              fullWidth
+              sx={{
+                width: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "1.25rem",
+                mb: 2,
+              }}
             >
               Добавить пациента
             </Button>
-            <Button
-              variant="outlined"
-              startIcon={<RefreshOutlined />}
-              onClick={handleManualRefresh}
-            >
-              Обновить
-            </Button>
-            <Button
-              variant="outlined"
-              startIcon={<EventAvailableOutlined />}
-              disabled={!selected}
-              onClick={() => setVisitOpen(true)}
-            >
-              Прием
-            </Button>
-          </Stack>
-        }
-      />
-
-      <Box sx={{ px: 2, py: 2  }}>
-        <Breadcrumbs sx={{ mb: 2 }}>
-          <Link
-            component={RouterLink}
-            to="/home"
-            underline="hover"
-            color="inherit"
-          >
-            Главная
-          </Link>
-          <Typography color="text.primary">Поиск пациента</Typography>
-        </Breadcrumbs>
-
-        <Tabs
-          value={activeTab}
-          onChange={(_e, val) => setActiveTab(val)}
-          variant="scrollable"
-          scrollButtons="auto"
-          sx={{ mb: 2 }}
-        >
-          <Tab label="Пациенты" />
-          <Tab label="История" />
-          <Tab label="Карточка" />
-        </Tabs>
-
-        <Grid container spacing={2}>
-          {/* Left column: Patients */}
-          <Grid item xs={12} md={4}>
             <Card variant="outlined">
               <CardHeader
                 sx={{ flexWrap: "wrap", gap: 2 }}
@@ -869,7 +829,7 @@ export const PatientSearchPage: React.FC = () => {
                     direction="row"
                     gap={1}
                     alignItems="center"
-                    sx={{ width: { xs: 1, md: "auto" } }}
+                    sx={{ width: { xs: 1, md: "auto", flexWrap: "wrap" } }}
                   >
                     <TextField
                       size="small"
@@ -983,7 +943,8 @@ export const PatientSearchPage: React.FC = () => {
                       }}
                     >
                       <Typography variant="caption" color="text.secondary">
-                        Page {page} of {Math.max(1, Math.ceil(total / PER_PAGE))}
+                        Page {page} of{" "}
+                        {Math.max(1, Math.ceil(total / PER_PAGE))}
                       </Typography>
                       <Pagination
                         count={Math.max(1, Math.ceil(total / PER_PAGE))}
@@ -1000,172 +961,189 @@ export const PatientSearchPage: React.FC = () => {
             </Card>
           </Grid>
 
-          {/* Middle column: History */}
-          <Grid item xs={12} md={4}>
-            <Card variant="outlined">
-              <CardHeader
-                title={
-                  <Stack direction="row" alignItems="center" gap={1}>
-                    <Typography variant="subtitle1">История приемов</Typography>
-                    <Chip size="small" label={history.length} />
-                  </Stack>
-                }
-              />
-              <Divider />
-              <CardContent sx={{ p: 0, maxHeight: "53vh", overflowY: "auto" }}>
-                {selected == null ? (
-                  <Typography sx={{ p: 2 }} variant="body2">
-                    Выберите пациента слева
-                  </Typography>
-                ) : historyLoading ? (
-                  <Typography sx={{ p: 2 }} variant="body2">
-                    Загрузка…
-                  </Typography>
-                ) : historyError ? (
-                  <Typography sx={{ p: 2 }} variant="body2" color="error">
-                    Ошибка: {historyError}
-                  </Typography>
-                ) : history.length === 0 ? (
-                  <Typography sx={{ p: 2 }} variant="body2">
-                    История пуста
-                  </Typography>
-                ) : (
-                  <Stack divider={<Divider flexItem />}>
-                    {history.map((h) => (
-                      <Box
-                        key={h.ID}
-                        component={RouterLink}
-                        to={`/home/appointments/${h.ID}`}
-                        sx={{
-                          px: 2,
-                          py: 1.25,
-                          textDecoration: "none",
-                          color: "inherit",
-                          "&:hover": {
-                            bgcolor: (theme) => theme.palette.action.hover,
-                          },
-                        }}
-                      >
-                        <Stack
-                          direction="row"
-                          justifyContent="space-between"
-                          alignItems="flex-start"
-                          gap={2}
-                        >
-                          <Stack>
-                            <Typography variant="subtitle2">
-                              {h["Дата и время"]}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                              Доктор: {h["Доктор ФИО"] || "—"}
-                            </Typography>
-                            {h["Услуга"] && (
-                              <Typography
-                                variant="body2"
-                                color="text.secondary"
-                              >
-                                Услуга: {h["Услуга"]}
-                              </Typography>
-                            )}
-                          </Stack>
-                          <Stack alignItems="flex-end">
-                            {typeof h["Итого, сом"] !== "undefined" ||
-                            typeof h["Стоимость"] !== "undefined" ? (
-                              <Typography
-                                variant="body2"
-                                color="text.secondary"
-                              >
-                                Сумма:{" "}
-                                {formatKGS(
-                                  h["Итого, сом"] ?? h["Стоимость"] ?? 0
+          {selected && (
+            <>
+              {/* Middle column: History */}
+              <Grid item xs={12} md={4}>
+                <Card variant="outlined">
+                  <CardHeader
+                    title={
+                      <Stack direction="row" alignItems="center" gap={1}>
+                        <Typography variant="subtitle1">
+                          История приемов
+                        </Typography>
+                        <Chip size="small" label={history.length} />
+                      </Stack>
+                    }
+                  />
+                  <Divider />
+                  <CardContent
+                    sx={{ p: 0, maxHeight: "53vh", overflowY: "auto" }}
+                  >
+                    {selected == null ? (
+                      <Typography sx={{ p: 2 }} variant="body2">
+                        Выберите пациента слева
+                      </Typography>
+                    ) : historyLoading ? (
+                      <Typography sx={{ p: 2 }} variant="body2">
+                        Загрузка…
+                      </Typography>
+                    ) : historyError ? (
+                      <Typography sx={{ p: 2 }} variant="body2" color="error">
+                        Ошибка: {historyError}
+                      </Typography>
+                    ) : history.length === 0 ? (
+                      <Typography sx={{ p: 2 }} variant="body2">
+                        История пуста
+                      </Typography>
+                    ) : (
+                      <Stack divider={<Divider flexItem />}>
+                        {history.map((h) => (
+                          <Box
+                            key={h.ID}
+                            component={RouterLink}
+                            to={`/home/appointments/${h.ID}`}
+                            sx={{
+                              px: 2,
+                              py: 1.25,
+                              textDecoration: "none",
+                              color: "inherit",
+                              "&:hover": {
+                                bgcolor: (theme) => theme.palette.action.hover,
+                              },
+                            }}
+                          >
+                            <Stack
+                              direction="row"
+                              justifyContent="space-between"
+                              alignItems="flex-start"
+                              gap={2}
+                            >
+                              <Stack>
+                                <Typography variant="subtitle2">
+                                  {h["Дата и время"]}
+                                </Typography>
+                                <Typography
+                                  variant="body2"
+                                  color="text.secondary"
+                                >
+                                  Доктор: {h["Доктор ФИО"] || "—"}
+                                </Typography>
+                                {h["Услуга"] && (
+                                  <Typography
+                                    variant="body2"
+                                    color="text.secondary"
+                                  >
+                                    Услуга: {h["Услуга"]}
+                                  </Typography>
                                 )}
-                              </Typography>
-                            ) : null}
-                            {h.Статус && (
-                              <Chip
-                                label={h.Статус}
-                                size="small"
-                                color={
-                                  h.Статус === "Оплачено"
-                                    ? "success"
-                                    : h.Статус === "Ожидаем"
-                                    ? "warning"
-                                    : "default"
-                                }
-                                variant={
-                                  h.Статус === "Со скидкой"
-                                    ? "outlined"
-                                    : "filled"
-                                }
-                              />
-                            )}
-                          </Stack>
+                              </Stack>
+                              <Stack alignItems="flex-end">
+                                {typeof h["Итого, сом"] !== "undefined" ||
+                                typeof h["Стоимость"] !== "undefined" ? (
+                                  <Typography
+                                    variant="body2"
+                                    color="text.secondary"
+                                  >
+                                    Сумма:{" "}
+                                    {formatKGS(
+                                      h["Итого, сом"] ?? h["Стоимость"] ?? 0
+                                    )}
+                                  </Typography>
+                                ) : null}
+                                {h.Статус && (
+                                  <Chip
+                                    label={h.Статус}
+                                    size="small"
+                                    color={
+                                      h.Статус === "Оплачено"
+                                        ? "success"
+                                        : h.Статус === "Ожидаем"
+                                        ? "warning"
+                                        : "default"
+                                    }
+                                    variant={
+                                      h.Статус === "Со скидкой"
+                                        ? "outlined"
+                                        : "filled"
+                                    }
+                                  />
+                                )}
+                              </Stack>
+                            </Stack>
+                          </Box>
+                        ))}
+                      </Stack>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+              {/* Right column: Selected Patient Info */}
+              <Grid item xs={12} md={4}>
+                <Card
+                  variant="outlined"
+                  sx={{
+                    borderColor: "transparent",
+                    color: "primary.contrastText",
+                    background: (theme) =>
+                      `linear-gradient(135deg, ${theme.palette.info.light}, ${theme.palette.info.main})`,
+                  }}
+                >
+                  <CardHeader
+                    title={
+                      <Stack direction="row" alignItems="center" gap={1.25}>
+                        <PersonOutlineOutlined />
+                        <Typography variant="h6">Карточка пациента</Typography>
+                      </Stack>
+                    }
+                  />
+                  <Divider sx={{ borderColor: "rgba(255,255,255,0.35)" }} />
+                  <CardContent>
+                    {selected ? (
+                      <Stack spacing={1.5}>
+                        <Typography variant="subtitle1">
+                          {selected.fio}
+                        </Typography>
+                        <Stack direction="row" alignItems="center" gap={1}>
+                          <LocalPhoneOutlined />
+                          <Typography variant="body2">
+                            {selected.phone || "—"}
+                          </Typography>
                         </Stack>
-                      </Box>
-                    ))}
-                  </Stack>
-                )}
-              </CardContent>
-            </Card>
-          </Grid>
-
-          <Grid item xs={12} md={4}>
-            <Card
-              variant="outlined"
-              sx={{
-                borderColor: "transparent",
-                color: "primary.contrastText",
-                background: (theme) =>
-                  `linear-gradient(135deg, ${theme.palette.info.light}, ${theme.palette.info.main})`,
-              }}
-            >
-              <CardHeader
-                title={
-                  <Stack direction="row" alignItems="center" gap={1.25}>
-                    <PersonOutlineOutlined />
-                    <Typography variant="h6">Карточка пациента</Typography>
-                  </Stack>
-                }
-              />
-              <Divider sx={{ borderColor: "rgba(255,255,255,0.35)" }} />
-              <CardContent>
-                {selected ? (
-                  <Stack spacing={1.5}>
-                    <Typography variant="subtitle1">{selected.fio}</Typography>
-                    <Stack direction="row" alignItems="center" gap={1}>
-                      <LocalPhoneOutlined />
-                      <Typography variant="body2">
-                        {selected.phone || "—"}
+                        <Divider
+                          sx={{ borderColor: "rgba(255,255,255,0.35)" }}
+                        />
+                        <Stack direction="row" alignItems="center" gap={1}>
+                          <CalendarMonthOutlined />
+                          <Typography variant="body2">
+                            Последний прием:{" "}
+                            {history[0]?.["Дата и время"] || "—"}
+                          </Typography>
+                        </Stack>
+                        <Stack direction="row" alignItems="center" gap={1}>
+                          <MedicalServicesOutlined />
+                          <Typography variant="body2">
+                            Последняя услуга: {history[0]?.["Услуга"] || "—"}
+                          </Typography>
+                        </Stack>
+                        <Stack direction="row" alignItems="center" gap={1}>
+                          <NotesOutlined />
+                          <Typography variant="body2">
+                            Жалобы:{" "}
+                            {history[0]?.["Жалобы при обращении"] || "—"}
+                          </Typography>
+                        </Stack>
+                      </Stack>
+                    ) : (
+                      <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                        Выберите пациента слева
                       </Typography>
-                    </Stack>
-                    <Divider sx={{ borderColor: "rgba(255,255,255,0.35)" }} />
-                    <Stack direction="row" alignItems="center" gap={1}>
-                      <CalendarMonthOutlined />
-                      <Typography variant="body2">
-                        Последний прием: {history[0]?.["Дата и время"] || "—"}
-                      </Typography>
-                    </Stack>
-                    <Stack direction="row" alignItems="center" gap={1}>
-                      <MedicalServicesOutlined />
-                      <Typography variant="body2">
-                        Последняя услуга: {history[0]?.["Услуга"] || "—"}
-                      </Typography>
-                    </Stack>
-                    <Stack direction="row" alignItems="center" gap={1}>
-                      <NotesOutlined />
-                      <Typography variant="body2">
-                        Жалобы: {history[0]?.["Жалобы при обращении"] || "—"}
-                      </Typography>
-                    </Stack>
-                  </Stack>
-                ) : (
-                  <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                    Выберите пациента слева
-                  </Typography>
-                )}
-              </CardContent>
-            </Card>
-          </Grid>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+            </>
+          )}
         </Grid>
       </Box>
 

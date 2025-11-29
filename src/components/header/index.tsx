@@ -19,6 +19,8 @@ import { ColorModeContext } from "../../contexts/color-mode";
 import { useMobileSidebar } from "../sidebar/mobile-context";
 import { useNavigate } from "react-router";
 import { supabase } from "../../utility/supabaseClient";
+import { InputAdornment, TextField } from "@mui/material";
+import SearchOutlined from "@mui/icons-material/SearchOutlined";
 
 type IUser = {
   id: number;
@@ -46,9 +48,11 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
         // ignore
       }
 
-      const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-        setAuthEmail(session?.user?.email ?? null);
-      });
+      const { data: sub } = supabase.auth.onAuthStateChange(
+        (_event, session) => {
+          setAuthEmail(session?.user?.email ?? null);
+        }
+      );
       unsub = () => sub.subscription.unsubscribe();
     })();
 
@@ -68,6 +72,10 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
       navigate("/login", { replace: true });
     }
   };
+
+  function setQuery(value: string): void {
+    throw new Error("Function not implemented.");
+  }
 
   return (
     <AppBar
@@ -105,8 +113,34 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
           >
             Мама Доктор
           </Typography>
+          <Stack
+            direction="row"
+            gap={1}
+            alignItems="center"
+            sx={{ width: { xs: 1, md: "auto" } }}
+          >
+            <TextField
+              size="small"
+              placeholder="Поиск"
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchOutlined fontSize="small" />
+                  </InputAdornment>
+                ),
+              }}
+              onChange={(e) => setQuery(e.target.value)}
+              sx={{ width: { xs: 1, md: 260 } }}
+            />
+          </Stack>
         </Box>
-        <Stack direction="row" width="100%" alignItems="center" justifyContent="space-between" gap={1}>
+        <Stack
+          direction="row"
+          width="100%"
+          alignItems="center"
+          justifyContent="space-between"
+          gap={1}
+        >
           <Stack direction="row" alignItems="center" gap={1}>
             <IconButton
               color="inherit"
@@ -139,7 +173,12 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
             </IconButton>
 
             {(user?.avatar || user?.name) && (
-              <Stack direction="row" gap="12px" alignItems="center" justifyContent="center">
+              <Stack
+                direction="row"
+                gap="12px"
+                alignItems="center"
+                justifyContent="center"
+              >
                 {user?.name && (
                   <Typography
                     sx={{

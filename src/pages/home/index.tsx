@@ -350,6 +350,19 @@ export const HomePage: React.FC = () => {
       {/* KPI Cards */}
       <Grid container spacing={2} sx={{ px: 2, pt: 2, pb: 0 }}>
         <Grid item xs={12} md={4}>
+            <Button
+              variant="contained"
+              fullWidth
+              sx={{
+                width: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "1.25rem",
+              }}
+            >
+              + Добавить прием
+            </Button>
           <Card
             variant="outlined"
             sx={{
@@ -371,12 +384,6 @@ export const HomePage: React.FC = () => {
                 </Typography>
               </Box>
             </CardContent> */}
-            <Button
-              variant="contained"
-              sx={{ display: { xs: "none", lg: "inline-flex", justifyContent: "center" } }}
-            >
-              + Добавить прием
-            </Button>
           </Card>
         </Grid>
 
